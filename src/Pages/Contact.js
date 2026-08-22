@@ -61,9 +61,7 @@ const teambranch = [
   {
     city: "COIMBATORE",
     address: [
-      "741, 2nd Building, TSJ Complex, 2nd Floor,",
-      "Avinashi Road,",
-      "Coimbatore - 641 018",
+      "Grand CAG Central, 3rd Floor , NAVA INDIA, 110, Avinashi Rd, Peelamedu, Coimbatore, Tamil Nadu 641037",
     ],
   },
   {
@@ -78,9 +76,7 @@ const teambranch = [
   {
     city: "MADURAI",
     address: [
-      "No.70, Navalar Nagar 3rd Street,",
-      "Sakthi Velammal Nagar,",
-      "S.S Colony, Madurai - 625016",
+      "70, Navalar Nagar 3rd St, Sakthi Velammal Nagar, S S Colony, Madurai, Tamil Nadu 625016",
     ],
   },
   {
@@ -90,6 +86,12 @@ const teambranch = [
       "23rd Main Rd, Vanganahalli,",
       "1st Sector, HSR Layout,",
       "Bengaluru, Karnataka 560102",
+    ],
+  },
+  {
+    city: "NAMAKKAL",
+    address: [
+      "Door No: 341/113A1, 1st Floor S.P. Pudur Main Road, Paramathi Rd, Namakkal, Tamil Nadu 637001",
     ],
   },
 ];
