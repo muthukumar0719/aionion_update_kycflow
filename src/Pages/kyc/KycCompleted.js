@@ -1,94 +1,24 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
 
 import KycStepper from "../../Components/kyc/KycStepper";
-import api from "../../services/api";
+
+const REDIRECT_URL = "https://www.aionioncapital.com";
+const AUTO_REDIRECT_SECONDS = 5;
 
 const KycCompleted = () => {
-  const navigate = useNavigate();
-  const [processingPdf, setProcessingPdf] = useState(false);
-  const [pdfMessage, setPdfMessage] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(AUTO_REDIRECT_SECONDS);
 
-  const getPdfResponse = async () => {
-    const applicationId = localStorage.getItem("application_id");
-
-    if (!applicationId) {
-      setPdfMessage("Application ID not found. PDF can be downloaded later from the admin dashboard.");
-      return null;
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      window.location.href = REDIRECT_URL;
+      return;
     }
-
-    try {
-      setProcessingPdf(true);
-      setPdfMessage("");
-
-      const response = await api.get(`/contact/applications/${applicationId}/pdf`, {
-        responseType: "blob",
-      });
-
-      const contentDisposition = response.headers["content-disposition"] || "";
-      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
-      const fileName = fileNameMatch?.[1] || `account_opening_${applicationId}.pdf`;
-      const blob = new Blob([response.data], { type: "application/pdf" });
-
-      if (response.headers["x-pdf-warnings"]) {
-        setPdfMessage(
-          "Test PDF is ready. Some production fields are still missing, so this file should be used only for localhost/UAT.",
-        );
-      }
-
-      return { blob, fileName };
-    } catch (error) {
-      setPdfMessage(
-        error.response?.data?.message ||
-          "Unable to generate the PDF right now. You can retry below or download it later from admin.",
-      );
-      return null;
-    } finally {
-      setProcessingPdf(false);
-    }
-  };
-
-  const previewPdf = async () => {
-    const pdfResult = await getPdfResponse();
-    if (!pdfResult) return;
-
-    const previewUrl = window.URL.createObjectURL(pdfResult.blob);
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
-    setPdfMessage("PDF preview opened in a new tab.");
-
-    window.setTimeout(() => {
-      window.URL.revokeObjectURL(previewUrl);
-    }, 60_000);
-  };
-
-  const downloadPdf = async () => {
-    const pdfResult = await getPdfResponse();
-    if (!pdfResult) return;
-
-    const downloadUrl = window.URL.createObjectURL(pdfResult.blob);
-    const link = document.createElement("a");
-
-    link.href = downloadUrl;
-    link.download = pdfResult.fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(downloadUrl);
-
-    setPdfMessage((prev) =>
-      prev && prev.includes("localhost/UAT")
-        ? prev
-        : "PDF downloaded successfully.",
-    );
-  };
+    const timer = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
 
   return (
     <div className='container py-5'>
-      <h2 className='text-center'>Open a trading and demat account online
-
-</h2>
-      <p className='text-center'>Aionion Capital Online Registration</p>
-
       <KycStepper
         currentStep='complete'
         completedSteps={["contact", "identify", "personal", "scheme", "complete"]}
@@ -103,77 +33,81 @@ const KycCompleted = () => {
           boxShadow: "0 18px 48px rgba(38, 64, 149, 0.12)",
           padding: "48px 36px",
           textAlign: "center",
+          overflow: "hidden",
         }}
       >
-        <h1 style={{ color: "#264095", marginBottom: "16px" }}>
-          KYC Completed Successfully
-        </h1>
+        <img
+          src='/aionion-logo.png'
+          alt='Aionion Capital'
+          style={{ height: "90px", marginBottom: "20px" }}
+        />
 
-        <p style={{ fontSize: "18px", lineHeight: 1.6, marginBottom: "28px" }}>
-          Your onboarding flow has been completed successfully. Our team will review
-          your application and proceed with the next activation steps.
-        </p>
-
-        <p
+        <div
           style={{
-            marginBottom: "20px",
-            color: "#264095",
-            lineHeight: 1.5,
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: "28px",
           }}
         >
-          Your PDF is ready. Use the button below to preview/download the latest
-          generated copy.
-        </p>
-
-        {pdfMessage ? (
-          <p
+          <div
             style={{
-              marginBottom: "20px",
-              color: "#264095",
-              lineHeight: 1.5,
+              position: "absolute",
+              left: 0,
+              width: "70px",
+              height: "22px",
+              background: "#1c2fef",
+              transform: "skewX(-20deg)",
+            }}
+          />
+          <div
+            style={{
+              fontFamily: "'Dancing Script', cursive",
+              fontWeight: 700,
+              fontSize: "56px",
+              lineHeight: 1,
+              whiteSpace: "nowrap",
             }}
           >
-            {pdfMessage}
+            <span style={{ color: "#1c2fef" }}>Happy </span>
+            <span style={{ color: "#f36c8a" }}>Investing..!</span>
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              width: "70px",
+              height: "22px",
+              background: "#f36c8a",
+              transform: "skewX(-20deg)",
+            }}
+          />
+        </div>
+
+        <div style={{ textAlign: "left", fontSize: "17px", lineHeight: 1.7, color: "#1a1a1a" }}>
+          <p style={{ fontWeight: 700, marginBottom: "10px" }}>Congratulations!</p>
+          <p style={{ fontStyle: "italic", marginBottom: "10px" }}>
+            Your Demat Account Opening Process Has Been Completed Successfully.
           </p>
-        ) : null}
+          <p style={{ fontStyle: "italic", marginBottom: "10px" }}>
+            Your Demat Account will be activated within 2 working days.
+          </p>
+          <p style={{ fontStyle: "italic", marginBottom: "10px" }}>
+            You will receive a confirmation notification once your account is active.
+          </p>
+          <p style={{ fontStyle: "italic", marginBottom: 0 }}>Thank you for choosing us.</p>
+        </div>
 
-        <button
-          type='button'
-          className='submit-btn'
-          style={{ maxWidth: "320px", margin: "0 auto 16px" }}
-          onClick={previewPdf}
-          disabled={processingPdf}
-        >
-          {processingPdf ? "Preparing PDF..." : "Preview PDF"}
-        </button>
-
-        <button
-          type='button'
-          className='submit-btn'
-          style={{ maxWidth: "320px", margin: "0 auto 16px" }}
-          onClick={downloadPdf}
-          disabled={processingPdf}
-        >
-          {processingPdf ? "Preparing PDF..." : "Download PDF"}
-        </button>
-
-        <button
-          type='button'
-          className='submit-btn'
-          style={{ maxWidth: "320px", margin: "0 auto 16px" }}
-          onClick={() => navigate("/esign")}
-        >
-          Back to eSign
-        </button>
-
-        <button
-          type='button'
-          className='submit-btn'
-          style={{ maxWidth: "320px", margin: "0 auto" }}
-          onClick={() => navigate("/")}
-        >
-          Back to Home
-        </button>
+        <p style={{ marginTop: "24px", color: "#8a8f9c", fontSize: "15px" }}>
+          Redirecting to aionioncapital.com in {secondsLeft}s...{" "}
+          <a
+            href={REDIRECT_URL}
+            style={{ color: "#1c2fef", fontWeight: 600, textDecoration: "none" }}
+          >
+            Go now
+          </a>
+        </p>
       </div>
     </div>
   );

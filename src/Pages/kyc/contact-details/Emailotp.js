@@ -93,6 +93,7 @@ const Emailotp = () => {
 
       await api.post("/contact/verify-email-otp", {
         application_id: applicationId,
+        kyc_id: localStorage.getItem("kyc_id"),
         email,
         otp: fullOtp,
       });

@@ -456,7 +456,7 @@ const Pancardverification = () => {
 
     const uploadData = new FormData();
 
-    uploadData.append("application_id", applicationId);
+    uploadData.append("kyc_id", applicationId);
     uploadData.append("pan_number", panNumber);
     uploadData.append("dob", dateOfBirth);
 
@@ -602,7 +602,7 @@ const Pancardverification = () => {
 
       // Save request ID in your identification table.
       await api.post("/identify/save-details", {
-        application_id: applicationId,
+        kyc_id: applicationId,
         pan_number: panNumber,
         provider: "digilocker",
         provider_ref: requestId,
@@ -659,8 +659,20 @@ const Pancardverification = () => {
 
       localStorage.setItem("panNumber", cleanedPan);
 
+      const existingKycId = localStorage.getItem("kyc_id");
+      if (!existingKycId) {
+        throw new Error("KYC ID is missing. Please restart the KYC process.");
+      }
+
+      // OCR validation in verify-pan reads this upload, so upload must finish first.
+      await uploadPanCard({
+        applicationId: existingKycId,
+        panNumber: cleanedPan,
+        dateOfBirth: dobIso,
+      });
+
       const verifyResponse = await api.post("/identify/verify-pan", {
-        application_id: localStorage.getItem("application_id"),
+        kyc_id: localStorage.getItem("kyc_id"),
         pan_number: cleanedPan,
         dob: dobIso,
       });
@@ -669,8 +681,8 @@ const Pancardverification = () => {
 
       console.log("VERIFY PAN RESPONSE:", result);
 
-      if (result?.application_id) {
-        localStorage.setItem("application_id", String(result.application_id));
+      if (result?.kyc_id) {
+        localStorage.setItem("kyc_id", String(result.kyc_id));
       }
 
       if (!result?.success) {
@@ -688,24 +700,16 @@ const Pancardverification = () => {
         return;
       }
 
-      const applicationId =
-        result?.application_id || localStorage.getItem("application_id");
+      const applicationId = result?.kyc_id || localStorage.getItem("kyc_id");
 
       if (!applicationId) {
         setErrors((previous) => ({
           ...previous,
-          general: "Application ID is missing. Please restart the KYC process.",
+          general: "KYC ID is missing. Please restart the KYC process.",
         }));
 
         return;
       }
-
-      // Upload file / captured image into backend uploads/pancardimage
-      await uploadPanCard({
-        applicationId,
-        panNumber: cleanedPan,
-        dateOfBirth: dobIso,
-      });
 
       /*
        * KRA FLOW
@@ -729,34 +733,18 @@ const Pancardverification = () => {
           allContactDetailsMatched,
         });
 
-        if (allContactDetailsMatched) {
-          localStorage.setItem("kra_contact_verified", "true");
+        // KRA registered -> always fetch and show the KRA details.
+        // (KRA masks mobile/email in its response, so an exact contact match
+        // can rarely pass; the match result is passed through for display only.)
+        localStorage.setItem(
+          "kra_contact_verified",
+          allContactDetailsMatched ? "true" : "false",
+        );
 
-          navigate("/kra-details", {
-            state: {
-              panData: kraData,
-              contactVerification: {
-                mobileMatched: true,
-                emailMatched: true,
-              },
-            },
-          });
-
-          return;
-        }
-
-        // Either mobile or email did not match.
-        localStorage.setItem("kra_contact_verified", "false");
-
-        localStorage.setItem("digilocker_flow_reason", "KRA_CONTACT_MISMATCH");
-
-        await redirectToDigiLocker({
-          applicationId,
-          panNumber: cleanedPan,
-          reason: "KRA_CONTACT_MISMATCH",
-          contactVerification: {
-            mobileMatched,
-            emailMatched,
+        navigate("/kra-details", {
+          state: {
+            panData: kraData,
+            contactVerification: { mobileMatched, emailMatched },
           },
         });
 
@@ -1027,8 +1015,41 @@ const Pancardverification = () => {
               </div>
 
               {file && (
-                <div className='selected-file-box'>
-                  <span className='selected-file-name'>
+                <div
+                  className='selected-file-box'
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    border: "1px solid #21a366",
+                    background: "#e9f8f0",
+                    borderRadius: "12px",
+                    padding: "12px 16px",
+                  }}
+                >
+                  <span
+                    aria-hidden='true'
+                    style={{
+                      flex: "0 0 auto",
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "50%",
+                      background: "#21a366",
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓
+                  </span>
+
+                  <span
+                    className='selected-file-name'
+                    style={{ color: "#0f7a4b", fontWeight: 600, flex: 1 }}
+                  >
                     {activePanMethod === "capture"
                       ? `Captured PAN Image: ${file.name}`
                       : `Selected PAN File: ${file.name}`}
@@ -1039,6 +1060,16 @@ const Pancardverification = () => {
                     className='remove-file-btn'
                     onClick={clearSelectedPanFile}
                     disabled={loading}
+                    title='Remove file'
+                    style={{
+                      flex: "0 0 auto",
+                      background: "transparent",
+                      border: "none",
+                      color: "#6b7280",
+                      fontSize: "18px",
+                      lineHeight: 1,
+                      cursor: "pointer",
+                    }}
                   >
                     ×
                   </button>

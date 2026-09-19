@@ -42,7 +42,7 @@ const IncomeTaxDetails = () => {
       console.log("PAN DATA:", panData);
 
       await api.post("/identify/save-details", {
-        application_id: localStorage.getItem("application_id"),
+        kyc_id: localStorage.getItem("kyc_id"),
 
         pan_number: panNumber,
         full_name: panData?.full_name,
@@ -57,7 +57,7 @@ const IncomeTaxDetails = () => {
       console.log("PAN DATA SAVED");
 
       await api.post("/identify/save-details", {
-        application_id: localStorage.getItem("application_id"),
+        kyc_id: localStorage.getItem("kyc_id"),
 
         provider: "digilocker",
         provider_ref: requestId,

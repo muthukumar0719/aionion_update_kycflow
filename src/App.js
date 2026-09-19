@@ -1,25 +1,13 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import React, { useEffect, useState } from "react";
 
+import "bootstrap/dist/css/bootstrap.min.css";
+import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import "./Style.css";
+
 //COMPONENTS
-import Navbar from "./Components/Navbar";
-import Footer from "./Components/Footer";
-import InvestorAttentionScroller from "./Components/InvestorAttentionScroller";
 import AccessibilityManager from "./Components/AccessibilityManager";
 import ScrollToTop from "./Components/ScrollToTop";
-import LoginForm from "./Components/LoginForm";
-import TradingLoginRedirect from "./Components/TradingLoginRedirect";
-import LegacyRedirect from "./Components/LegacyRedirect";
-
-//PAGES
-import Home from "./Pages/Home";
-import Aboutus from "./Pages/Aboutus";
-import Blog from "./Pages/Blog";
-import Contact from "./Pages/Contact";
-import Investor from "./Pages/Investor";
-import Privacy from "./Pages/Privacy";
-import More from "./Pages/More";
-import Plus from "./Pages/Plus";
 
 //Admin
 import AdminDashboard from "./Pages/admin/Dashboard";
@@ -31,7 +19,6 @@ import RMDashboard from "./Pages/admin/RMDashboard";
 import RequireAdminAuth from "./Components/admin/RequireAdminAuth";
 import MakerCheckerWorkflow from "./Pages/admin/MakerCheckerWorkflow";
 
-import Openaccount from "./Components/Openaccount";
 import Accountcloserform from "./Pages/Accountcloserform";
 import Rekycform from "./Pages/Rekycform";
 
@@ -74,13 +61,6 @@ import "react-toastify/dist/ReactToastify.css";
 
 // import Chatbot from "./Components/chatbot/Chatbot";
 
-const resourcesHashRedirects = {
-  "#find-complaint": "/investor#complaint-procedure",
-  "#excalation-matrix": "/investor#escalation-matrix",
-  "#bank-details": "/investor#bank-details",
-  "#smart-odr": "/investor#sebi-score",
-};
-
 const Layout = () => {
   const location = useLocation();
 
@@ -95,81 +75,10 @@ const Layout = () => {
     };
   }, [location.pathname]);
 
-  const hideFooter =
-    location.pathname === "/login" ||
-    location.pathname === "/trading-login" ||
-    location.pathname === "/accountcloser" ||
-    location.pathname === "/rekycpage" ||
-    location.pathname === "/numberregistration" ||
-    location.pathname === "/numberotp" ||
-    location.pathname === "/emailverify" ||
-    location.pathname === "/emailotp" ||
-    location.pathname === "/panverify" ||
-    location.pathname === "/kra-details" ||
-    location.pathname === "/digilocker-success" ||
-    location.pathname === "/digilocker-details" ||
-    location.pathname === "/income-details" ||
-    location.pathname === "/photoverify" ||
-    location.pathname === "/bankdetails" ||
-    location.pathname === "/bankproof" ||
-    location.pathname === "/personaldetails" ||
-    location.pathname === "/nomination" ||
-    location.pathname === "/percentage-allocation" ||
-    location.pathname === "/no-nomination" ||
-    location.pathname === "/schemedetail" ||
-    location.pathname === "/payment-details" ||
-    location.pathname === "/payment-completed" ||
-    location.pathname === "/esign" ||
-    location.pathname === "/uploadsignature" ||
-   
-    location.pathname === "/kyc-complete" ||
-    location.pathname === "/photoverify";
-
   return (
     <>
-      <Navbar />
       <Routes>
-        <Route path='/' element={<Home />} />
-        <Route path='/about' element={<Aboutus />} />
-        <Route path='/blog' element={<Blog />} />
-        <Route path='/contact' element={<Contact />} />
-        <Route path='/investor' element={<Investor />} />
-        <Route path='/privacy' element={<Privacy />} />
-        <Route path='/more' element={<More />} />
-        <Route path='/More' element={<More />} />
-        <Route path='/plus' element={<Plus />} />
-        <Route
-          path='/resources/*'
-          element={
-            <LegacyRedirect
-              to='/investor'
-              hashMap={resourcesHashRedirects}
-            />
-          }
-        />
-        <Route path='/privacy-policy/*' element={<LegacyRedirect to='/privacy' />} />
-        <Route
-          path='/disclaimer/*'
-          element={<LegacyRedirect to='/more?section=Disclaimers' />}
-        />
-        <Route
-          path='/refund-cancellation/*'
-          element={<LegacyRedirect to='/more?section=Refund' />}
-        />
-        <Route
-          path='/terms-and-conditions/*'
-          element={<LegacyRedirect to='/more?section=Terms' />}
-        />
-        <Route
-          path='/bonddetails/*'
-          element={<LegacyRedirect to='/more?section=bond' />}
-        />
-        <Route path='/demataccount/*' element={<LegacyRedirect to='/openaccount' />} />
-        <Route path='/get-app/*' element={<LegacyRedirect to='/plus' />} />
-        <Route path='/home/*' element={<LegacyRedirect to='/' />} />
-        <Route path='/login' element={<LoginForm />} />
-        <Route path='/trading-login' element={<TradingLoginRedirect />} />
-        <Route path='/openaccount' element={<Openaccount />} />
+        <Route path='/' element={<Navigate to='/numberregistration' replace />} />
         <Route path='/accountcloser' element={<Accountcloserform />} />
         <Route path='/rekycpage' element={<Rekycform />} />
         <Route path='/numberregistration' element={<Numberregistration />} />
@@ -252,12 +161,6 @@ const Layout = () => {
       </Routes>
       {/* <Chatbot /> */}
       <AccessibilityManager />
-      {!hideFooter && (
-        <>
-          <InvestorAttentionScroller />
-          <Footer />
-        </>
-      )}
       <ToastContainer position='top-right' autoClose={2500} />
     </>
   );

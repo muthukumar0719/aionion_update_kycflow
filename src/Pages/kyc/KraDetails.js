@@ -40,6 +40,9 @@ const KraDetails = () => {
       const kraAddress = [
         panData.address_1,
         panData.address_2,
+        panData.address_3,
+        panData.city,
+        panData.district,
         panData.state,
         panData.pincode,
       ]
@@ -65,7 +68,7 @@ const KraDetails = () => {
       }
 
       await api.post("/identify/save-kra-details", {
-        application_id: localStorage.getItem("application_id"),
+        kyc_id: localStorage.getItem("kyc_id"),
 
         ...panData,
       });
@@ -195,6 +198,39 @@ const KraDetails = () => {
                 type='text'
                 className='form-control kra-input'
                 value={panData.address_2 || ""}
+                readOnly
+              />
+            </div>
+
+            <div className='col-md-6'>
+              <label className='kra-label'>Address 3</label>
+
+              <input
+                type='text'
+                className='form-control kra-input'
+                value={panData.address_3 || ""}
+                readOnly
+              />
+            </div>
+
+            <div className='col-md-6'>
+              <label className='kra-label'>City</label>
+
+              <input
+                type='text'
+                className='form-control kra-input'
+                value={panData.city || ""}
+                readOnly
+              />
+            </div>
+
+            <div className='col-md-6'>
+              <label className='kra-label'>District</label>
+
+              <input
+                type='text'
+                className='form-control kra-input'
+                value={panData.district || ""}
                 readOnly
               />
             </div>

@@ -102,6 +102,7 @@ const Numberotp = () => {
 
       const response = await api.post("/contact/verify-mobile-otp", {
         application_id: applicationId,
+        kyc_id: localStorage.getItem("kyc_id"),
         mobile_number: mobileNumber,
         otp: fullOtp,
       });

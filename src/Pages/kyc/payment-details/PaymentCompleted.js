@@ -10,7 +10,11 @@ const PaymentCompleted = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    toast.success("Payment completed successfully");
+    // toastId dedupes the double-fire from React StrictMode / re-mounts, so
+    // only one popup shows.
+    toast.success("Payment completed successfully", {
+      toastId: "payment-completed",
+    });
   }, []);
 
   return (
@@ -33,7 +37,7 @@ const PaymentCompleted = () => {
         <button
           type='button'
           className='submit-btn'
-          onClick={() => navigate("/esign")}
+          onClick={() => navigate("/photoverify")}
         >
           Continue
         </button>

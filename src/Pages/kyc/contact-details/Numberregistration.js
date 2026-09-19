@@ -95,6 +95,12 @@ const Numberregistration = () => {
       }
 
       localStorage.setItem("application_id", responseData.application_id);
+      if (responseData.kyc_id) {
+        localStorage.setItem("kyc_id", String(responseData.kyc_id));
+      }
+      if (responseData.unique_id) {
+        localStorage.setItem("unique_id", responseData.unique_id);
+      }
       localStorage.setItem("mobile_number", formData.mobile_number);
 
       navigate("/numberotp", {

@@ -1,73 +1,112 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import api from "../../services/api";
+
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 40; // ~2 minutes
+
+const resolveDigilockerId = (searchParams) =>
+  searchParams.get("id") ||
+  searchParams.get("request_id") ||
+  localStorage.getItem("digilocker_id") ||
+  localStorage.getItem("digilocker_request_id") ||
+  null;
 
 const DigilockerSuccess = () => {
   const navigate = useNavigate();
 
   const [searchParams] = useSearchParams();
 
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    checkStatus();
-  }, []);
+    const id = resolveDigilockerId(searchParams);
 
-  const checkStatus = async () => {
-    try {
-      const id = searchParams.get("id");
+    console.log("DIGILOCKER ID:", id);
 
-      console.log("DIGILOCKER ID:", id);
+    if (!id) {
+      setError(
+        "Missing DigiLocker reference. Please restart the DigiLocker step."
+      );
+      return undefined;
+    }
 
-      // POLLING
-      const interval = setInterval(async () => {
-        const statusResponse = await api.get(
-          `/digilocker/status/${id}`
-        );
+    let attempts = 0;
+    let cancelled = false;
+
+    const finish = () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+
+      attempts += 1;
+
+      if (attempts > MAX_POLL_ATTEMPTS) {
+        finish();
+        setError("DigiLocker verification timed out. Please try again.");
+        return;
+      }
+
+      try {
+        const statusResponse = await api.get(`/digilocker/status/${id}`);
 
         const statusData = statusResponse.data.data;
 
         console.log("STATUS:", statusData);
 
-        if (
-          statusData.status === "authenticated"
-        ) {
-          clearInterval(interval);
+        if (statusData.status !== "authenticated") return;
 
-          // FETCH AADHAAR
-          // CVL KRA: pass application_id so backend can upload Aadhaar XML to S3
-          const applicationId = localStorage.getItem("application_id");
-          const aadhaarResponse = await api.get(
-            `/digilocker/aadhaar/${id}${applicationId ? `?application_id=${applicationId}` : ``}`
-          );
+        finish();
 
-          const aadhaarData =
-            aadhaarResponse.data.data.aadhaar;
+        // CVL KRA: pass kyc_id so backend can upload Aadhaar XML to S3
+        const applicationId = localStorage.getItem("kyc_id");
+        const aadhaarResponse = await api.get(
+          `/digilocker/aadhaar/${id}${
+            applicationId ? `?kyc_id=${applicationId}` : ``
+          }`
+        );
 
-          console.log(
-            "AADHAAR DATA:",
-            aadhaarData
-          );
+        const aadhaarData = aadhaarResponse.data.data.aadhaar;
 
-          navigate("/digilocker-details", {
-            state: {
-              digilockerData: aadhaarData,
-            },
-          });
-        }
-      }, 3000);
-    } catch (error) {
-      console.log(
-        error.response?.data || error.message
-      );
-    }
-  };
+        console.log("AADHAAR DATA:", aadhaarData);
+
+        navigate("/digilocker-details", {
+          state: { digilockerData: aadhaarData },
+        });
+      } catch (err) {
+        finish();
+        const detail = err.response?.data || err.message;
+        console.log(detail);
+        setError(
+          typeof detail === "string"
+            ? detail
+            : detail?.message ||
+                "Unable to fetch DigiLocker details. Please try again."
+        );
+      }
+    };
+
+    const interval = setInterval(tick, POLL_INTERVAL_MS);
+    tick();
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [searchParams, navigate]);
 
   return (
     <div className="container py-5 text-center">
-      <h3>
-        Fetching DigiLocker Details...
-      </h3>
+      {error ? (
+        <h3 className="text-danger">{error}</h3>
+      ) : (
+        <h3>Fetching DigiLocker Details...</h3>
+      )}
     </div>
   );
 };

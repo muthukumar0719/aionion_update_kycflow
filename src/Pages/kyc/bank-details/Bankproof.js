@@ -333,6 +333,7 @@ const Bankproof = () => {
       setLoading(true);
 
       const verifyResponse = await api.post("/bank-details/verify-bank", {
+        kyc_id: localStorage.getItem("kyc_id") || applicationId,
         accountNumber: formData.accountNumber,
         ifscCode: formData.ifscCode,
       });
@@ -356,6 +357,7 @@ const Bankproof = () => {
         verificationType: verificationMethod,
         verificationStatus: "VERIFIED",
         bankVerified: true,
+        verificationAmount: verifyResponse.data?.data?.amount || null,
         bankResponse: verifyResponse.data?.data || null,
       });
 

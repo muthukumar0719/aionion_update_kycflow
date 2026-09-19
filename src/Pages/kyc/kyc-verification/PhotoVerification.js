@@ -21,12 +21,46 @@ const PhotoVerification = () => {
 
   const [error, setError] = useState("");
 
+  // Live location captured for the in-person verification record. Stored on
+  // kyc_master_details.ipv_latitude / ipv_longitude / ipv_location_accuracy
+  // by /photo/upload - the same coordinates the eSign step needs later.
+  const [geo, setGeo] = useState(null);
+  const [geoError, setGeoError] = useState("");
+
+  const captureLocation = () =>
+    new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        setGeoError("Location is not supported by this browser.");
+        resolve(null);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          const coords = { latitude, longitude, accuracy };
+          setGeo(coords);
+          setGeoError("");
+          resolve(coords);
+        },
+        (err) => {
+          setGeoError(
+            err.code === err.PERMISSION_DENIED
+              ? "Location permission was denied. Please allow location access - it is required for KYC verification."
+              : "Unable to fetch your current location. Please check that location services are on.",
+          );
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      );
+    });
+
   const [tokenFromUrl, setTokenFromUrl] = useState("");
   const [validatingToken, setValidatingToken] = useState(false);
   const [sharedSuccess, setSharedSuccess] = useState(false);
   const [tokenError, setTokenError] = useState(false);
 
-  const openCamera = () => {
+  const openCamera = async () => {
     setCameraOpen(true);
     setCapturedImage(null);
     setError("");
@@ -48,6 +82,10 @@ const PhotoVerification = () => {
     };
 
     loadModels();
+
+    // Ask for location early so the permission prompt is out of the way before
+    // the applicant captures their photo.
+    captureLocation();
   }, []);
 
   const generateTokenAndUpdateUrl = async () => {
@@ -82,6 +120,23 @@ const PhotoVerification = () => {
   };
 
 
+  // Crop a square from the centre of the frame (no circular mask - the
+  // stored photo, and the copy pasted into the KYC PDF, are both square).
+  const cropToSquare = (img) => {
+    const size = Math.min(img.width, img.height);
+    const sx = (img.width - size) / 2;
+    const sy = (img.height - size) / 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
+
+    return canvas.toDataURL("image/png");
+  };
+
   // CAPTURE PHOTO
   const capturePhoto = async () => {
   const imageSrc = webcamRef.current?.getScreenshot();
@@ -114,6 +169,33 @@ const PhotoVerification = () => {
     return;
   }
 
+  // The capture guide is a circle centred in the frame. The face must sit
+  // inside that circle - centred and not too small / too large.
+  const box = detections[0].detection.box;
+  const circleCx = img.width / 2;
+  const circleCy = img.height / 2;
+  const circleR = Math.min(img.width, img.height) / 2;
+
+  const faceCx = box.x + box.width / 2;
+  const faceCy = box.y + box.height / 2;
+  const offCentre = Math.hypot(faceCx - circleCx, faceCy - circleCy);
+  const faceSize = Math.max(box.width, box.height);
+
+  if (offCentre > circleR * 0.45) {
+    setError("Please move your face to the centre of the circle.");
+    return;
+  }
+
+  if (faceSize < circleR * 0.8) {
+    setError("Move closer so your face fills the circle.");
+    return;
+  }
+
+  if (faceSize > circleR * 2.2) {
+    setError("Move back a little so your whole face is inside the circle.");
+    return;
+  }
+
   const landmarks = detections[0].landmarks;
   const leftEyeY = landmarks.getLeftEye()[0].y;
   const rightEyeY = landmarks.getRightEye()[0].y;
@@ -126,7 +208,7 @@ const PhotoVerification = () => {
     setError("");
   }
 
-  setCapturedImage(imageSrc);
+  setCapturedImage(cropToSquare(img));
   setCameraOpen(false);
 };
 
@@ -148,7 +230,7 @@ const PhotoVerification = () => {
       ctx.translate(canvas.width / 2, canvas.height / 2);
       ctx.rotate(direction === 'left' ? -Math.PI / 2 : Math.PI / 2);
       ctx.drawImage(img, -img.width / 2, -img.height / 2);
-      setCapturedImage(canvas.toDataURL("image/jpeg"));
+      setCapturedImage(canvas.toDataURL("image/png"));
       setError("");
     };
   };
@@ -172,9 +254,19 @@ const PhotoVerification = () => {
       setLoading(true);
       setError("");
 
+      // Use the freshest fix we can get; fall back to whatever was captured on
+      // mount if the applicant just denied/failed this prompt.
+      const coords = (await captureLocation()) || geo;
+
       const payload = {
         image: capturedImage,
       };
+
+      if (coords) {
+        payload.latitude = coords.latitude;
+        payload.longitude = coords.longitude;
+        payload.accuracy = coords.accuracy;
+      }
 
       if (tokenFromUrl) {
         payload.token = tokenFromUrl;
@@ -187,7 +279,7 @@ const PhotoVerification = () => {
       if (tokenFromUrl && !localStorage.getItem("application_id")) {
         setSharedSuccess(true);
       } else {
-        navigate("/uploadsignature");
+        navigate("/esign");
       }
     } catch (error) {
       console.log("PHOTO UPLOAD ERROR:", error.response?.data || error.message);
@@ -238,8 +330,23 @@ const PhotoVerification = () => {
                   Face Forward and make sure your face is clearly visible.
                 </li>
                 <li>Remove your glasses, if necessary.</li>
+                <li>Allow location access when prompted.</li>
               </ul>
             </div>
+
+            {geoError && (
+              <p className='text-warning mt-2 mb-0' style={{ fontSize: "0.85rem" }}>
+                {geoError}{" "}
+                <button
+                  type='button'
+                  className='btn btn-link p-0 align-baseline'
+                  style={{ fontSize: "0.85rem" }}
+                  onClick={captureLocation}
+                >
+                  Retry location
+                </button>
+              </p>
+            )}
 
             {/* OPEN CAMERA BUTTON */}
             {!cameraOpen && !capturedImage && !validatingToken && !tokenError && (
@@ -262,28 +369,63 @@ const PhotoVerification = () => {
               {/* CAMERA VIEW */}
               {cameraOpen && !capturedImage && (
                 <>
-                  <div className='mt-4'>
-                    <Webcam
-                      ref={webcamRef}
-                      audio={false}
-                      screenshotFormat='image/jpeg'
-                      width={400}
-                      height={300}
-                      mirrored={true}
-                      videoConstraints={{
-                        width: 400,
+                  <div className='mt-4 d-flex justify-content-center'>
+                    <div
+                      style={{
+                        position: "relative",
+                        width: 300,
                         height: 300,
-                        facingMode: "user",
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        background: "#000",
                       }}
-                      onUserMedia={() => {
-                        console.log("Camera opened");
-                      }}
-                      onUserMediaError={(error) => {
-                        console.log("Camera error:", error);
-                        setError("Unable to access camera");
-                      }}
-                    />
+                    >
+                      <Webcam
+                        ref={webcamRef}
+                        audio={false}
+                        screenshotFormat='image/jpeg'
+                        width={400}
+                        height={300}
+                        mirrored={true}
+                        videoConstraints={{
+                          width: 400,
+                          height: 300,
+                          facingMode: "user",
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          height: 300,
+                          width: "auto",
+                        }}
+                        onUserMediaError={(error) => {
+                          console.log("Camera error:", error);
+                          setError("Unable to access camera.");
+                        }}
+                      />
+
+                      {/* Circular alignment guide */}
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          borderRadius: "50%",
+                          border: "3px dashed rgba(255,255,255,0.9)",
+                          boxShadow: "0 0 0 9999px rgba(0,0,0,0.25)",
+                          pointerEvents: "none",
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  <p
+                    className='text-muted text-center mt-2 mb-0'
+                    style={{ fontSize: "0.85rem" }}
+                  >
+                    Position your face inside the circle.
+                  </p>
 
                   {/* CAPTURE / CANCEL ONLY WHEN CAMERA OPEN */}
                   <div className='d-flex justify-content-center gap-3 mt-3'>
@@ -309,7 +451,13 @@ const PhotoVerification = () => {
               {/* PREVIEW AFTER CAPTURE */}
               {capturedImage && !cameraOpen && (
                 <div className='mt-4 text-center'>
-                  <img src={capturedImage} alt='Captured' width='300' />
+                  <img
+                    src={capturedImage}
+                    alt='Captured'
+                    width='300'
+                    height='300'
+                    style={{ objectFit: "cover" }}
+                  />
 
                   <div className='mt-3 d-flex justify-content-center gap-3'>
                     <button

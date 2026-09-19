@@ -156,7 +156,10 @@ const PersonalDetails = () => {
   });
 
   const [applicationId, setApplicationId] = useState(
-    () => localStorage.getItem("application_id") || "",
+    () =>
+      localStorage.getItem("kyc_id") ||
+      localStorage.getItem("application_id") ||
+      "",
   );
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -171,7 +174,9 @@ const PersonalDetails = () => {
   const [mainFormError, setMainFormError] = useState("");
 
   useEffect(() => {
-    const savedApplicationId = localStorage.getItem("application_id");
+    const savedApplicationId =
+      localStorage.getItem("kyc_id") ||
+      localStorage.getItem("application_id");
     setApplicationId(savedApplicationId || "");
 
     setFormData((prev) => ({
@@ -446,6 +451,8 @@ const PersonalDetails = () => {
 
     if (!formData.annualIncome) {
       newErrors.annualIncome = "Annual income is required";
+    } else if (formData.annualIncome === "Above TwentyFive Lakhs") {
+      newErrors.annualIncome = "Select 25 Lakhs - 1 Crore or Above 1 Crore";
     }
 
     if (!formData.tradingExperience) {
@@ -608,7 +615,6 @@ const PersonalDetails = () => {
                       placeholder='Enter Your father name'
                       value={formData.fatherName}
                       onChange={handleChange}
-                      readOnly={lockedFields.fatherName}
                     />
                     <label>
                       Father's Name <span>*</span>
@@ -712,8 +718,10 @@ const PersonalDetails = () => {
                       </option>
                       <option value='Professional'>Professional</option>
                       <option value='Business'>Business</option>
-                      <option value='Retired'>Salaried</option>
+                      <option value='Retired'>Retired</option>
+                      <option value='Housewife'>Housewife</option>
                       <option value='Student'>Student</option>
+                      <option value='Forex Dealer'>Forex Dealer</option>
                       <option value='Other'>Other</option>
                     </select>
                     <label>
@@ -827,10 +835,17 @@ const PersonalDetails = () => {
                       <option value="" disabled hidden>
                         Select Annual Income
                       </option>
-                      <option value="< 1 Lakh">&lt; 1 Lakh</option>
-                      <option value="1 - 5 Lakh">1 - 5 Lakh</option>
-                      <option value="5 - 10 Lakh">5 - 10 Lakh</option>
-                      <option value="10 Lakh+">10 Lakh+</option>
+                      <option value="Less Than One Lakhs">Less Than One Lakhs</option>
+                      <option value="One To Five Lakhs">One To Five Lakhs</option>
+                      <option value="Five To Ten Lakhs">Five To Ten Lakhs</option>
+                      <option value="Ten To TwentyFive Lakhs">Ten To TwentyFive Lakhs</option>
+                      {formData.annualIncome === "Above TwentyFive Lakhs" && (
+                        <option value="Above TwentyFive Lakhs" disabled>
+                          Above 25 Lakhs — select an exact range
+                        </option>
+                      )}
+                      <option value="TwentyFive Lakhs To One Crore">25 Lakhs - 1 Crore</option>
+                      <option value="Above One Crore">Above 1 Crore</option>
                     </select>
                     <label>
                       Annual Income <span>*</span>
@@ -978,6 +993,11 @@ const PersonalDetails = () => {
           )}
 
           {mainFormError && <p className='error-text mt-3'>{mainFormError}</p>}
+
+          <p className='standing-instruction-note'>
+            <span className='mandatory-star'>*</span> Mandatory — review and
+            submit your Standing Instructions below.
+          </p>
 
           <button
             type='button'

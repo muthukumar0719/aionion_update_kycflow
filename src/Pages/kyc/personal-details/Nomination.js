@@ -1,20 +1,15 @@
-    import React, { useEffect, useState } from "react";
-    import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-    import KycStepper from "../../../Components/kyc/KycStepper";
-    import api from "../../../services/api";
+import KycStepper from "../../../Components/kyc/KycStepper";
+import api from "../../../services/api";
 
-    import editicon from "../../../assets/editicon.png";
-    import deleteicon from "../../../assets/deleteicon.png";
+import editicon from "../../../assets/editicon.png";
+import deleteicon from "../../../assets/deleteicon.png";
 
-import phoneicon from "../../../assets/nominee-phone.png";
-import emailicon from "../../../assets/nominee-mail.png";
-import aadhaaricon from "../../../assets/nominee-aadhaar.png";
-import panicon from "../../../assets/nominee-pancard.png";
-import addressicon from "../../../assets/nominee-address.png";
 import PdfDeclarationPopup from "../../../Components/common/PdfDeclarationPopup/PdfDeclarationPopup";
 
-const MAX_NOMINEES = 5;
+const MAX_NOMINEES = 3;
 
 const formatDobInput = (value) => {
   const digits = value.replace(/\D/g, "").slice(0, 8);
@@ -54,17 +49,30 @@ const parseDisplayDob = (value) => {
       id: `nominee-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       nomineeName: "",
       dob: "",
-      mobile: "",
-      email: "",
       relation: "",
-      gender: "",
-      nomineeProofType: "",
-      aadhaar: "",
-      pan: "",
-      nomineeAddress: "",
-      sameAddress: false,
       nomineeAllocation: allocation,
     });
+
+    const createEmptyGuardian = () => ({
+      relation: "",
+      name: "",
+      dob: "",
+      mobile: "",
+      address: "",
+    });
+
+    /** true when a DD-MM-YYYY (or parseable) DOB is under 18 years today. */
+    const isMinorDob = (dobDisplay) => {
+      const parsed = parseDisplayDob(dobDisplay);
+      if (!parsed) return false;
+      const now = new Date();
+      let age = now.getFullYear() - parsed.parsedDate.getFullYear();
+      const mo = now.getMonth() - parsed.parsedDate.getMonth();
+      if (mo < 0 || (mo === 0 && now.getDate() < parsed.parsedDate.getDate())) {
+        age -= 1;
+      }
+      return age < 18;
+    };
 
     const getAutoSplitNominees = (nomineeList = []) => {
       if (!nomineeList.length) {
@@ -96,8 +104,12 @@ const parseDisplayDob = (value) => {
       const [editingNomineeId, setEditingNomineeId] = useState(null);
       const [showNomineeForm, setShowNomineeForm] = useState(true);
 
+      // One guardian for the whole application - required when any nominee's
+      // DOB makes them a minor (under 18).
+      const [guardian, setGuardian] = useState(() => createEmptyGuardian());
+      const [guardianErrors, setGuardianErrors] = useState({});
+
       const [personalAddress, setPersonalAddress] = useState("");
-      const [aadhaarFocused, setAadhaarFocused] = useState(false);
 
       const [rightsAccepted, setRightsAccepted] = useState(false);
       const [showNomineeNames, setShowNomineeNames] = useState(false);
@@ -128,17 +140,6 @@ const parseDisplayDob = (value) => {
         setPersonalAddress(localStorage.getItem("aadhaarAddress") || "");
       }, []);
 
-      const maskAadhaarNumber = (value = "") => {
-        if (!value) return "";
-
-        const cleanValue = value.replace(/\D/g, "").slice(0, 12);
-
-        if (cleanValue.length <= 4) {
-          return cleanValue;
-        }
-
-        return `XXXXXXXX${cleanValue.slice(-4)}`;
-      };
 
       const getAllocationTotal = (nomineeList = []) => {
         return nomineeList.reduce((total, nominee) => {
@@ -194,6 +195,7 @@ const parseDisplayDob = (value) => {
 
       const workingNominees = getWorkingNominees();
       const totalAllocation = getAllocationTotal(workingNominees);
+      const anyNomineeMinor = workingNominees.some((n) => isMinorDob(n.dob));
 
       /*
         While Nominee 2 or Nominee 3 form is open:
@@ -238,58 +240,8 @@ const parseDisplayDob = (value) => {
           updatedValue = value.replace(/[^A-Za-z\s.]/g, "");
         }
 
-        if (name === "mobile") {
-          updatedValue = value.replace(/\D/g, "").slice(0, 10);
-        }
-
-        if (name === "aadhaar") {
-          updatedValue = value.replace(/\D/g, "").slice(0, 12);
-        }
-
-        if (name === "pan") {
-          updatedValue = value
-            .toUpperCase()
-            .replace(/[^A-Z0-9]/g, "")
-            .slice(0, 10);
-        }
-
         if (name === "dob") {
           updatedValue = formatDobInput(value);
-        }
-
-        if (name === "sameAddress") {
-          const savedAddress =
-            personalAddress || localStorage.getItem("aadhaarAddress") || "";
-
-          if (checked && !savedAddress.trim()) {
-            setDraftNominee((previous) => ({
-              ...previous,
-              sameAddress: false,
-              nomineeAddress: "",
-            }));
-
-            setErrors((previous) => ({
-              ...previous,
-              nomineeAddress:
-                "Personal address not found. Please enter nominee address manually.",
-            }));
-
-            return;
-          }
-
-          setDraftNominee((previous) => ({
-            ...previous,
-            sameAddress: checked,
-            nomineeAddress: checked ? savedAddress : "",
-          }));
-
-          setErrors((previous) => ({
-            ...previous,
-            nomineeAddress: "",
-            general: "",
-          }));
-
-          return;
         }
 
         setDraftNominee((previous) => ({
@@ -304,25 +256,14 @@ const parseDisplayDob = (value) => {
         }));
       };
 
-      const handleDocChange = (event) => {
-        const nomineeProofType = event.target.value;
+      const handleGuardianChange = (event) => {
+        const { name, value } = event.target;
+        let cleaned = value;
+        if (name === "mobile") cleaned = value.replace(/\D/g, "").slice(0, 10);
+        else if (name === "dob") cleaned = formatDobInput(value);
 
-        setDraftNominee((previous) => ({
-          ...previous,
-          nomineeProofType,
-          aadhaar: "",
-          pan: "",
-        }));
-
-        setAadhaarFocused(false);
-
-        setErrors((previous) => ({
-          ...previous,
-          nomineeProofType: "",
-          aadhaar: "",
-          pan: "",
-          general: "",
-        }));
+        setGuardian((previous) => ({ ...previous, [name]: cleaned }));
+        setGuardianErrors((previous) => ({ ...previous, [name]: "" }));
       };
 
       const handleAllocationChange = (event) => {
@@ -386,8 +327,6 @@ const parseDisplayDob = (value) => {
         const newErrors = {};
 
         const nameRegex = /^[A-Za-z\s.]+$/;
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 
         if (!draftNominee.nomineeName.trim()) {
           newErrors.nomineeName = "Nominee name is required";
@@ -408,48 +347,8 @@ const parseDisplayDob = (value) => {
           }
         }
 
-        if (!draftNominee.mobile) {
-          newErrors.mobile = "Mobile number is required";
-        } else if (draftNominee.mobile.length !== 10) {
-          newErrors.mobile = "Mobile number must be 10 digits";
-        }
-
-        if (!draftNominee.email.trim()) {
-          newErrors.email = "Email is required";
-        } else if (!emailRegex.test(draftNominee.email.trim())) {
-          newErrors.email = "Enter a valid email address";
-        }
-
         if (!draftNominee.relation) {
           newErrors.relation = "Relation is required";
-        }
-
-        if (!draftNominee.gender) {
-          newErrors.gender = "Gender is required";
-        }
-
-        if (!draftNominee.nomineeProofType) {
-          newErrors.nomineeProofType = "Please choose nominee proof type";
-        }
-
-        if (draftNominee.nomineeProofType === "Aadhaar") {
-          if (!draftNominee.aadhaar) {
-            newErrors.aadhaar = "Aadhaar number is required";
-          } else if (draftNominee.aadhaar.length !== 12) {
-            newErrors.aadhaar = "Aadhaar number must be 12 digits";
-          }
-        }
-
-        if (draftNominee.nomineeProofType === "PAN") {
-          if (!draftNominee.pan) {
-            newErrors.pan = "PAN number is required";
-          } else if (!panRegex.test(draftNominee.pan)) {
-            newErrors.pan = "Enter a valid PAN number";
-          }
-        }
-
-        if (!draftNominee.nomineeAddress.trim()) {
-          newErrors.nomineeAddress = "Address is required";
         }
 
         const allocation = Number(draftNominee.nomineeAllocation);
@@ -506,6 +405,45 @@ const parseDisplayDob = (value) => {
         return true;
       };
 
+      // Guardian block is mandatory once any nominee's DOB is under 18.
+      const guardianNameRegex = /^[A-Za-z\s.]+$/;
+      const guardianMobileRegex = /^[6-9]\d{9}$/;
+
+      const validateGuardianDetails = () => {
+        const g = {};
+
+        if (!guardian.relation.trim()) g.relation = "Relation is required";
+
+        if (!guardian.name.trim()) {
+          g.name = "Guardian name is required";
+        } else if (!guardianNameRegex.test(guardian.name.trim())) {
+          g.name = "Only letters are allowed";
+        }
+
+        if (!guardian.dob) {
+          g.dob = "Guardian date of birth is required";
+        } else if (!parseDisplayDob(guardian.dob)) {
+          g.dob = "Enter a valid date (DD-MM-YYYY)";
+        } else if (isMinorDob(guardian.dob)) {
+          g.dob = "Guardian must be at least 18 years old";
+        }
+
+        if (!guardian.mobile) {
+          g.mobile = "Mobile number is required";
+        } else if (!guardianMobileRegex.test(guardian.mobile)) {
+          g.mobile = "Enter a valid 10 digit mobile number";
+        }
+
+        if (!guardian.address.trim()) {
+          g.address = "Address is required";
+        } else if (guardian.address.trim().length < 10) {
+          g.address = "Please enter the complete address";
+        }
+
+        setGuardianErrors(g);
+        return Object.keys(g).length === 0;
+      };
+
       const commitCurrentNominee = () => {
         if (!validateCurrentNominee()) {
           return null;
@@ -514,8 +452,6 @@ const parseDisplayDob = (value) => {
         const nomineeToSave = {
           ...draftNominee,
           nomineeName: draftNominee.nomineeName.trim(),
-          email: draftNominee.email.trim().toLowerCase(),
-          nomineeAddress: draftNominee.nomineeAddress.trim(),
         };
 
         if (editingNomineeId) {
@@ -549,7 +485,7 @@ const parseDisplayDob = (value) => {
 
           setErrors((previous) => ({
             ...previous,
-            general: "Maximum 5 nominees can be added.",
+            general: `Maximum ${MAX_NOMINEES} nominees can be added.`,
           }));
 
           return;
@@ -567,7 +503,6 @@ const parseDisplayDob = (value) => {
 
         setErrors({});
         setAllocationError("");
-        setAadhaarFocused(false);
       };
 
       /*
@@ -593,10 +528,16 @@ const parseDisplayDob = (value) => {
       };
 
       /*
-        Unlock percentage fields for manual allocation.
-        Existing auto-split values remain visible until the user changes them.
+        Unlock percentage fields for manual allocation and clear the
+        auto-split values so every nominee allocation starts blank again.
       */
       const handleRemoveAutoSplit = () => {
+        const clearedNominees = getRawWorkingNominees().map((nominee) => ({
+          ...nominee,
+          nomineeAllocation: "",
+        }));
+
+        updateWorkingNominees(clearedNominees);
         setIsAutoSplitApplied(false);
         setAllocationError("");
         setErrors({});
@@ -612,7 +553,6 @@ const parseDisplayDob = (value) => {
 
         setErrors({});
         setAllocationError("");
-        setAadhaarFocused(false);
       };
 
       /*
@@ -634,7 +574,6 @@ const parseDisplayDob = (value) => {
 
           setErrors({});
           setAllocationError("");
-          setAadhaarFocused(false);
           return;
         }
 
@@ -646,7 +585,6 @@ const parseDisplayDob = (value) => {
 
           setErrors({});
           setAllocationError("");
-          setAadhaarFocused(false);
           return;
         }
 
@@ -717,6 +655,16 @@ const parseDisplayDob = (value) => {
           return;
         }
 
+        const finalHasMinor = finalNominees.some((n) => isMinorDob(n.dob));
+        if (finalHasMinor && !validateGuardianDetails()) {
+          setErrors((previous) => ({
+            ...previous,
+            general:
+              "A nominee is a minor - please fill the guardian details below.",
+          }));
+          return;
+        }
+
         if (!rightsAccepted) {
           setErrors((previous) => ({
             ...previous,
@@ -747,6 +695,20 @@ const parseDisplayDob = (value) => {
                 dob: parsedDob ? parsedDob.isoValue : nominee.dob,
               };
             }),
+            guardian: finalHasMinor
+              ? {
+                  relation: guardian.relation.trim(),
+                  name: guardian.name.trim(),
+                  dob: (() => {
+                    const parsedGuardianDob = parseDisplayDob(guardian.dob);
+                    return parsedGuardianDob
+                      ? parsedGuardianDob.isoValue
+                      : guardian.dob;
+                  })(),
+                  mobile: guardian.mobile.trim(),
+                  address: guardian.address.trim(),
+                }
+              : null,
             showNomineeNames,
             showNomineeYesNo,
             rightsAccepted,
@@ -757,7 +719,7 @@ const parseDisplayDob = (value) => {
           const response = await api.post("/nominees/save", payload);
 
           if (response.data?.success) {
-            navigate("/photoverify");
+            navigate("/uploadsignature");
             return;
           }
 
@@ -827,7 +789,7 @@ const parseDisplayDob = (value) => {
               </div>
             </div>
 
-            <p className='mb-4'>You can add a maximum of 5 nominee details.</p>
+            <p className='mb-4'>You can add a maximum of 3 nominee details.</p>
 
             {nomination === "Yes" && (
               <form onSubmit={handleSubmit}>
@@ -882,89 +844,12 @@ const parseDisplayDob = (value) => {
 
                             <div className='col-12 col-sm-6'>
                               <strong>DOB:</strong> {nominee.dob || "-"}
+                              {isMinorDob(nominee.dob) && (
+                                <span className='text-warning ms-1'>(minor)</span>
+                              )}
                             </div>
-
-                            <div className='col-12 col-sm-6'>
-                              <strong>Gender:</strong> {nominee.gender || "-"}
-                            </div>
                           </div>
 
-                          <div className='d-flex align-items-center gap-2 small text-muted mt-3'>
-                            <img
-                              src={phoneicon}
-                              alt='Phone'
-                              style={{
-                                width: "18px",
-                                height: "18px",
-                                objectFit: "contain",
-                              }}
-                            />
-                            <span>{nominee.mobile || "-"}</span>
-                          </div>
-
-                          <div className='d-flex align-items-center gap-2 small text-muted mt-3'>
-                            <img
-                              src={emailicon}
-                              alt='Email'
-                              style={{
-                                width: "18px",
-                                height: "18px",
-                                objectFit: "contain",
-                              }}
-                            />
-                            <span
-                              style={{
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {nominee.email || "-"}
-                            </span>
-                          </div>
-
-                          <div className='d-flex align-items-center gap-2 small text-muted mt-3'>
-                            <img
-                              src={
-                                nominee.nomineeProofType === "PAN"
-                                  ? panicon
-                                  : aadhaaricon
-                              }
-                              alt='Proof'
-                              style={{
-                                width: "22px",
-                                height: "22px",
-                                objectFit: "contain",
-                              }}
-                            />
-
-                            <span>
-                              {nominee.nomineeProofType === "PAN"
-                                ? nominee.pan || "-"
-                                : maskAadhaarNumber(nominee.aadhaar)}
-                            </span>
-                          </div>
-
-                          <div className='d-flex align-items-start gap-2 small text-muted mt-3'>
-                            <img
-                              src={addressicon}
-                              alt='Address'
-                              style={{
-                                width: "22px",
-                                height: "22px",
-                                objectFit: "contain",
-                                marginTop: "2px",
-                              }}
-                            />
-
-                            <span
-                              style={{
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {nominee.nomineeAddress || "-"}
-                            </span>
-                          </div>
 
                           <div className='mt-3' style={{ maxWidth: "190px" }}>
                             <div className='floating-group'>
@@ -1122,229 +1007,6 @@ const parseDisplayDob = (value) => {
                       </div>
 
                       <div className='col-12 col-lg-6'>
-                        <div className='input-container'>
-                          <input
-                            type='text'
-                            className='input-field'
-                            placeholder='Enter Nominee Mail ID'
-                            name='email'
-                            value={draftNominee.email}
-                            onChange={handleChange}
-                            autoComplete='off'
-                            disabled={loading}
-                          />
-
-                          <label className='floating-label'>
-                            Enter Nominee Mail ID <span>*</span>
-                          </label>
-                        </div>
-
-                        {errors.email && (
-                          <p className='error-text'>{errors.email}</p>
-                        )}
-                      </div>
-
-                      <div className='col-12 col-lg-6'>
-                        <div className='input-container'>
-                          <input
-                            type='text'
-                            className='input-field'
-                            placeholder='Enter Nominee Mobile Number'
-                            name='mobile'
-                            value={draftNominee.mobile}
-                            onChange={handleChange}
-                            inputMode='numeric'
-                            autoComplete='off'
-                            disabled={loading}
-                          />
-
-                          <label className='floating-label'>
-                            Enter Nominee Mobile Number <span>*</span>
-                          </label>
-                        </div>
-
-                        {errors.mobile && (
-                          <p className='error-text'>{errors.mobile}</p>
-                        )}
-                      </div>
-
-                      <div className='col-12 col-lg-6'>
-                        <div className='floating-group'>
-                          <select
-                            name='gender'
-                            className='floating-select'
-                            value={draftNominee.gender}
-                            onChange={handleChange}
-                            disabled={loading}
-                          >
-                            <option value='' disabled hidden>
-                              Select Gender
-                            </option>
-
-                            <option value='Male'>Male</option>
-                            <option value='Female'>Female</option>
-                            <option value='Other'>Other</option>
-                          </select>
-
-                          <label>
-                            Select Gender <span>*</span>
-                          </label>
-                        </div>
-
-                        {errors.gender && (
-                          <p className='error-text'>{errors.gender}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className='row mt-3 g-3'>
-                      <div className='col-12 col-lg-6'>
-                        <div className='floating-group'>
-                          <select
-                            name='nomineeProofType'
-                            className='floating-select'
-                            value={draftNominee.nomineeProofType}
-                            onChange={handleDocChange}
-                            disabled={loading}
-                          >
-                            <option value='' disabled hidden>
-                              Choose your Proof Type
-                            </option>
-
-                            <option value='Aadhaar'>Aadhaar Card</option>
-                            <option value='PAN'>PAN Card</option>
-                          </select>
-
-                          <label>
-                            Select Nominee Proof type <span>*</span>
-                          </label>
-                        </div>
-
-                        {errors.nomineeProofType && (
-                          <p className='error-text'>{errors.nomineeProofType}</p>
-                        )}
-                      </div>
-
-                      {draftNominee.nomineeProofType === "Aadhaar" && (
-                        <div className='col-12 col-lg-6'>
-                          <div className='floating-group'>
-                            <input
-                              type='text'
-                              name='aadhaar'
-                              className='floating-input'
-                              placeholder='Enter Aadhaar Number'
-                              value={
-                                aadhaarFocused
-                                  ? draftNominee.aadhaar
-                                  : maskAadhaarNumber(draftNominee.aadhaar)
-                              }
-                              onFocus={() => setAadhaarFocused(true)}
-                              onBlur={() => setAadhaarFocused(false)}
-                              onChange={handleChange}
-                              inputMode='numeric'
-                              autoComplete='off'
-                              maxLength='12'
-                              disabled={loading}
-                              onPaste={(event) => event.preventDefault()}
-                              onCopy={(event) => event.preventDefault()}
-                              onCut={(event) => event.preventDefault()}
-                            />
-
-                            <label>
-                              Enter Aadhaar Number <span>*</span>
-                            </label>
-                          </div>
-
-                          {errors.aadhaar && (
-                            <p className='error-text'>{errors.aadhaar}</p>
-                          )}
-                        </div>
-                      )}
-
-                      {draftNominee.nomineeProofType === "PAN" && (
-                        <div className='col-12 col-lg-6'>
-                          <div className='floating-group'>
-                            <input
-                              type='text'
-                              name='pan'
-                              className='floating-input'
-                              placeholder='Enter PAN Number'
-                              value={draftNominee.pan}
-                              onChange={handleChange}
-                              autoComplete='off'
-                              maxLength='10'
-                              disabled={loading}
-                            />
-
-                            <label>
-                              Enter PAN Number <span>*</span>
-                            </label>
-                          </div>
-
-                          {errors.pan && <p className='error-text'>{errors.pan}</p>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className='d-flex justify-content-between mt-4 align-items-center flex-wrap gap-2'>
-                      <p className='mb-0'>Nominee Address Details</p>
-
-                      <div className='same-address-wrapper'>
-                        <input
-                          type='checkbox'
-                          id={`sameAddress-${draftNominee.id}`}
-                          className='same-address-checkbox'
-                          name='sameAddress'
-                          checked={draftNominee.sameAddress}
-                          onChange={handleChange}
-                          disabled={loading}
-                        />
-
-                        <label
-                          htmlFor={`sameAddress-${draftNominee.id}`}
-                          className='same-address-label'
-                        >
-                          Same as my address
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className='row mt-3'>
-                      <div className='col-12 col-lg-6'>
-                        <div className='floating-group'>
-                          <textarea
-                            name='nomineeAddress'
-                            className='floating-textarea'
-                            rows='4'
-                            placeholder=' '
-                            value={draftNominee.nomineeAddress}
-                            onChange={handleChange}
-                            readOnly={draftNominee.sameAddress}
-                            disabled={loading}
-                          />
-
-                          <label>
-                            Address Details <span>*</span>
-                          </label>
-                        </div>
-
-                        {errors.nomineeAddress && (
-                          <p className='error-text'>{errors.nomineeAddress}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className='mt-4'>
-                      <p className='mb-0 nominee-title'>
-                        Nominee Percentage Allocation{" "}
-                        <span className='required'>*</span>
-                      </p>
-
-                      <p className='text-muted mb-3' style={{ fontSize: "13px" }}>
-                        The sum of all Nominee&apos;s should be 100%
-                      </p>
-
-                      <div className='col-12 col-md-6 p-0'>
                         <div className='floating-group'>
                           <input
                             type='text'
@@ -1382,6 +1044,28 @@ const parseDisplayDob = (value) => {
                           <p className='error-text'>{errors.nomineeAllocation}</p>
                         )}
                       </div>
+
+                    </div>
+
+                    {isMinorDob(draftNominee.dob) && (
+                      <div
+                        className='alert alert-warning d-flex align-items-center justify-content-center text-center gap-2 mt-4 mb-0'
+                        role='alert'
+                      >
+                        <span style={{ fontSize: "18px" }} aria-hidden='true'>
+                          &#9888;
+                        </span>
+                        <span>
+                          This nominee is under 18. Please provide the guardian
+                          details below.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className='mt-4'>
+                      <p className='text-muted mb-3' style={{ fontSize: "13px" }}>
+                        The sum of all Nominee&apos;s should be 100%
+                      </p>
 
                       <div className='d-flex align-items-center gap-3 flex-wrap mt-3'>
                         <p className='mb-0'>
@@ -1473,6 +1157,140 @@ const parseDisplayDob = (value) => {
                         ✓ Auto split applied. Complete allocation is 100%.
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* GUARDIAN DETAILS - shown when any nominee is a minor */}
+                {anyNomineeMinor && (
+                  <div className='mt-5 guardian-section'>
+                    <p className='mb-0 nominee-title d-flex align-items-center gap-2'>
+                      <span style={{ fontSize: "20px" }} aria-hidden='true'>
+                        &#128737;
+                      </span>
+                      Guardian Details <span className='required'>*</span>
+                    </p>
+                    <p className='text-muted mb-3' style={{ fontSize: "13px" }}>
+                      A nominee is under 18, so a guardian must be provided.
+                    </p>
+
+                    <div className='row g-3'>
+                      <div className='col-12 col-lg-6'>
+                        <div className='floating-group'>
+                          <select
+                            name='relation'
+                            className='floating-select'
+                            value={guardian.relation}
+                            onChange={handleGuardianChange}
+                            disabled={loading}
+                          >
+                            <option value='' disabled hidden>
+                              Select Relation
+                            </option>
+
+                            <option value='Father'>Father</option>
+                            <option value='Mother'>Mother</option>
+                            <option value='Brother'>Brother</option>
+                            <option value='Sister'>Sister</option>
+                            <option value='Spouse'>Spouse</option>
+                            <option value='Wife'>Wife</option>
+                            <option value='Son'>Son</option>
+                            <option value='Daughter'>Daughter</option>
+                            <option value='Other'>Other</option>
+                          </select>
+
+                          <label>
+                            Relation to you <span>*</span>
+                          </label>
+                        </div>
+                        {guardianErrors.relation && (
+                          <p className='error-text'>{guardianErrors.relation}</p>
+                        )}
+                      </div>
+
+                      <div className='col-12 col-lg-6'>
+                        <div className='floating-group'>
+                          <input
+                            type='text'
+                            name='name'
+                            className='floating-input'
+                            placeholder='Guardian Name'
+                            value={guardian.name}
+                            onChange={handleGuardianChange}
+                            disabled={loading}
+                          />
+                          <label>
+                            Guardian Name <span>*</span>
+                          </label>
+                        </div>
+                        {guardianErrors.name && (
+                          <p className='error-text'>{guardianErrors.name}</p>
+                        )}
+                      </div>
+
+                      <div className='col-12 col-lg-6'>
+                        <div className='floating-group'>
+                          <input
+                            type='text'
+                            name='dob'
+                            className='floating-input'
+                            placeholder='Enter Guardian Date of Birth'
+                            value={guardian.dob}
+                            onChange={handleGuardianChange}
+                            inputMode='numeric'
+                            maxLength={10}
+                            disabled={loading}
+                          />
+                          <label>
+                            Guardian Date of Birth <span>*</span>
+                          </label>
+                        </div>
+                        {guardianErrors.dob && (
+                          <p className='error-text'>{guardianErrors.dob}</p>
+                        )}
+                      </div>
+
+                      <div className='col-12 col-lg-6'>
+                        <div className='floating-group'>
+                          <input
+                            type='text'
+                            name='mobile'
+                            className='floating-input'
+                            placeholder='Guardian Mobile Number'
+                            value={guardian.mobile}
+                            onChange={handleGuardianChange}
+                            inputMode='numeric'
+                            autoComplete='off'
+                            disabled={loading}
+                          />
+                          <label>
+                            Guardian Mobile Number <span>*</span>
+                          </label>
+                        </div>
+                        {guardianErrors.mobile && (
+                          <p className='error-text'>{guardianErrors.mobile}</p>
+                        )}
+                      </div>
+
+                      <div className='col-12'>
+                        <div className='floating-group'>
+                          <textarea
+                            name='address'
+                            className='floating-textarea'
+                            rows='3'
+                            placeholder=' '
+                            value={guardian.address}
+                            onChange={handleGuardianChange}
+                            disabled={loading}
+                          />
+                          <label>
+                            Guardian Address <span>*</span>
+                          </label>
+                        </div>
+                        {guardianErrors.address && (
+                          <p className='error-text'>{guardianErrors.address}</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 

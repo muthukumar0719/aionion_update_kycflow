@@ -37,10 +37,23 @@ const DigilockerDetails = () => {
   const maskedAadhaar = data?.maskedNumber || "";
   const address = data?.address || {};
 
+  // DigiLocker / Setu Aadhaar address does not have a plain "city" field - the
+  // town/city sits in vtc (Village/Town/City), sometimes subDistrict / locality.
+  const city =
+    address.city ||
+    address.vtc ||
+    address.subDistrict ||
+    address.sub_district ||
+    address.locality ||
+    address.postOffice ||
+    address.po ||
+    "";
+
   const fullAddress = `
   ${address.house || ""}
   ${address.street || ""}
   ${address.landmark || ""}
+  ${city || ""}
   ${address.district || ""}
   ${address.state || ""}
   ${address.country || ""}
@@ -52,7 +65,7 @@ const DigilockerDetails = () => {
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join(", ");
-  const addressLine2 = [address.district, address.city]
+  const addressLine2 = [city, address.district]
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join(", ");
@@ -81,8 +94,20 @@ const DigilockerDetails = () => {
         localStorage.setItem("gender_prefill_source", "DIGILOCKER");
       }
 
+      const kycId =
+        localStorage.getItem("kyc_id") ||
+        localStorage.getItem("application_id") ||
+        "";
+
+      if (!kycId) {
+        console.log("Missing kyc_id/application_id in localStorage");
+        alert("Your session reference is missing. Please restart the KYC flow.");
+        return;
+      }
+
       const payload = {
-        application_id: localStorage.getItem("application_id"),
+        kyc_id: kycId,
+        application_id: kycId,
 
         aadhaar_number_masked: maskedAadhaar,
 
@@ -110,6 +135,10 @@ const DigilockerDetails = () => {
 
         address_2: addressLine2,
 
+        city: city || "",
+
+        district: address.district || "",
+
         state: address.state || "",
 
         pincode: address.pin || "",
@@ -123,8 +152,8 @@ const DigilockerDetails = () => {
 
       console.log("SAVE PAYLOAD:", payload);
 
-      await api.post("/identify/save-details", payload);
-      console.log("Data saved successfully");
+      const saveResp = await api.post("/identify/save-details", payload);
+      console.log("Data saved successfully", saveResp?.data);
 
       navigate("/bankproof", {
         state: {
@@ -134,7 +163,13 @@ const DigilockerDetails = () => {
         },
       });
     } catch (error) {
-      console.log(error.response?.data || error.message);
+      const apiMsg =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to save DigiLocker details";
+      console.log("SAVE DETAILS ERROR:", error.response?.data || error.message);
+      alert(apiMsg);
     }
   };
 
@@ -234,6 +269,34 @@ const DigilockerDetails = () => {
                   value={normalizeGenderLabel(data?.gender)}
                   readOnly
                 />
+              </div>
+
+              <div className='input-box'>
+                <label>
+                  City <span>*</span>
+                </label>
+                <input type='text' value={city || ""} readOnly />
+              </div>
+
+              <div className='input-box'>
+                <label>
+                  District <span>*</span>
+                </label>
+                <input type='text' value={address.district || ""} readOnly />
+              </div>
+
+              <div className='input-box'>
+                <label>
+                  State <span>*</span>
+                </label>
+                <input type='text' value={address.state || ""} readOnly />
+              </div>
+
+              <div className='input-box'>
+                <label>
+                  Pincode <span>*</span>
+                </label>
+                <input type='text' value={address.pin || ""} readOnly />
               </div>
 
               <div className='input-box input-box-full address-box'>

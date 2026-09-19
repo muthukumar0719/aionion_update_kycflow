@@ -3571,6 +3571,13 @@ th {
   margin: auto;
 }
 /* Standing Instructions popup */
+.standing-instruction-note {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555555;
+}
+
 .standing-instruction-trigger {
   display: inline-flex;
   gap: 5px;

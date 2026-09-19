@@ -22,13 +22,12 @@ const SignatureVerification = () => {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfFrameLoading, setPdfFrameLoading] = useState(false);
-  const [pdfFrameIssue, setPdfFrameIssue] = useState(false);
   const [message, setMessage] = useState("");
-  const [pdfMessage, setPdfMessage] = useState("");
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
   const [esignStatus, setEsignStatus] = useState("");
+  // Set when eSign has definitively failed in a way "Check Status" can never
+  // fix by itself (Aadhaar name mismatch, or the name couldn't be verified) -
+  // the applicant has to go back to Setu and sign again, not just re-poll.
+  const [needsRetry, setNeedsRetry] = useState(false);
   const [providerStatus, setProviderStatus] = useState("");
   const [signedPdfUrl, setSignedPdfUrl] = useState("");
   const [ddpiDetails, setDdpiDetails] = useState(null);
@@ -39,9 +38,21 @@ const SignatureVerification = () => {
       localStorage.getItem("application_id") ||
       "",
   );
+  const [esignId, setEsignId] = useState(
+    () => localStorage.getItem("unique_id") || "",
+  );
   const hasReturnFromEsign = searchParams.get("esign_return") === "1";
   const isCompleted = (esignStatus === "completed" || providerStatus === "sign_complete") && Boolean(signedPdfUrl);
   const isCheckingReturnedEsign = hasReturnFromEsign && !isCompleted;
+
+  // eSign is done - skip the "Download Signed PDF / Continue" screen and go
+  // straight to the Happy Investing page instead of making the user click through.
+  useEffect(() => {
+    if (isCompleted) {
+      navigate("/kyc-complete");
+    }
+  }, [isCompleted, navigate]);
+
   const assetBaseUrl = useMemo(
     () => String(api.defaults.baseURL || "").replace(/\/api\/?$/, ""),
     [],
@@ -54,7 +65,13 @@ const SignatureVerification = () => {
       "";
 
     setApplicationId(nextApplicationId);
+    setEsignId(localStorage.getItem("unique_id") || "");
   }, [searchParams]);
+
+  // eSign endpoints are addressed by unique_id where available; older
+  // in-progress sessions created before this field existed fall back to the
+  // numeric id (the backend accepts either).
+  const effectiveEsignId = esignId || applicationId;
 
   useEffect(() => {
     if (!applicationId) {
@@ -89,24 +106,7 @@ const SignatureVerification = () => {
   }, [applicationId]);
 
   useEffect(() => {
-    if (!pdfFrameLoading || !pdfPreviewUrl) {
-      return undefined;
-    }
-
-    const fallbackTimer = window.setTimeout(() => {
-      console.warn("[PDF_PREVIEW] iframe load timed out", {
-        applicationId,
-        pdfPreviewUrl,
-      });
-      setPdfFrameLoading(false);
-      setPdfFrameIssue(true);
-    }, 12000);
-
-    return () => window.clearTimeout(fallbackTimer);
-  }, [applicationId, pdfFrameLoading, pdfPreviewUrl]);
-
-  useEffect(() => {
-    if (!applicationId || !hasReturnFromEsign) {
+    if (!effectiveEsignId || !hasReturnFromEsign) {
       return undefined;
     }
 
@@ -124,12 +124,9 @@ const SignatureVerification = () => {
     const checkEsignStatus = async () => {
       try {
         setStatusLoading(true);
-        if (pollAttempts === 0) {
-          setMessage("Checking eSign status...");
-        }
 
         const response = await api.get(
-          `/esign/applications/${applicationId}/status`,
+          `/esign/applications/${effectiveEsignId}/status`,
         );
         const data = response.data?.data || {};
         const nextEsignStatus = data.esign_status || "";
@@ -141,7 +138,7 @@ const SignatureVerification = () => {
         if (nextProviderStatus === "sign_complete") {
           localStorage.setItem("esign_completed", "true");
           setSignedPdfUrl(
-            `${api.defaults.baseURL}/esign/applications/${applicationId}/signed-pdf`,
+            `${api.defaults.baseURL}/esign/applications/${effectiveEsignId}/signed-pdf`,
           );
           setMessage(
             "eSign completed successfully. Download the signed PDF or continue.",
@@ -170,6 +167,10 @@ const SignatureVerification = () => {
         );
         stopPolling();
       } catch (error) {
+        const code = error.response?.data?.code;
+        if (code === "ESIGN_NAME_MISMATCH" || code === "ESIGN_NAME_UNVERIFIABLE") {
+          setNeedsRetry(true);
+        }
         setMessage(
           error.response?.data?.message ||
             "Unable to check the eSign status right now.",
@@ -185,142 +186,62 @@ const SignatureVerification = () => {
     return () => {
       stopPolling();
     };
-  }, [applicationId, hasReturnFromEsign]);
+  }, [effectiveEsignId, hasReturnFromEsign]);
 
-  const getPdfUrl = () => {
-    const apiBaseUrl = String(api.defaults.baseURL || "").replace(/\/+$/, "");
-    return `${apiBaseUrl}/contact/applications/${applicationId}/pdf`;
-  };
-
-  const getPdfDownloadUrl = () => `${getPdfUrl()}?download=1`;
-
-  const preparePdfUrl = async () => {
-    if (!applicationId) {
-      setPdfMessage(
-        "Application ID not found. Please resume the application again.",
-      );
-      return null;
-    }
-
-    try {
-      setPdfLoading(true);
-      setPdfMessage("");
-      const fileName = `account_opening_${applicationId}.pdf`;
-
-      return { url: getPdfUrl(), fileName };
-    } catch (error) {
-      // Log the full error to the console for debugging
-      console.error("PDF Preview API Error:", error);
-      console.error("Error Response Data:", error.response?.data);
-
-      let errorMessage = "Unable to generate the PDF preview right now.";
-      
-      // Attempt to extract the exact error message from the backend
-      if (typeof error.response?.data === 'string' && error.response.data.includes('Internal Server Error')) {
-        errorMessage = "Internal Server Error - The backend crashed while generating the PDF.";
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
+  const getCurrentPosition = () =>
+    new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation is not supported by this browser."));
+        return;
       }
 
-      setPdfMessage(errorMessage);
-      return null;
-    } finally {
-      setPdfLoading(false);
-    }
-  };
-
-  const previewPdf = async () => {
-    const pdfResult = await preparePdfUrl();
-    if (!pdfResult) {
-      return;
-    }
-
-    setPdfFrameLoading(true);
-    setPdfFrameIssue(false);
-    console.info("[PDF_PREVIEW] loading iframe preview", {
-      applicationId,
-      previewUrl: pdfResult.url,
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(position.coords),
+        (error) => {
+          const reason =
+            error.code === error.PERMISSION_DENIED
+              ? "Location permission was denied."
+              : "Unable to fetch current location.";
+          reject(new Error(`${reason} eSign requires your current location.`));
+        },
+        { enableHighAccuracy: true, timeout: 15000 },
+      );
     });
-    setPdfPreviewUrl(pdfResult.url);
-    setPdfMessage(
-      "Review the full PDF below, then confirm and proceed to eSign.",
-    );
-  };
-
-  const downloadPdf = async () => {
-    const pdfResult = await preparePdfUrl();
-    if (!pdfResult) {
-      return;
-    }
-
-    window.open(getPdfDownloadUrl(), "_blank", "noopener,noreferrer");
-
-    setPdfMessage((prev) =>
-      prev && prev.includes("localhost/UAT")
-        ? prev
-        : "PDF downloaded successfully.",
-    );
-  };
 
   const handleStartEsign = async () => {
     try {
       setLoading(true);
       setMessage("");
-      setSignedPdfUrl("");
-      setEsignStatus("");
-      setProviderStatus("");
+      setNeedsRetry(false);
 
-      if (!applicationId) {
+      if (!effectiveEsignId) {
         setMessage(
           "Application ID not found. Please resume the application again.",
         );
         return;
       }
 
-      let lat = "";
-      let lng = "";
-
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
-        });
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-      } catch (geoError) {
-        console.warn("Geolocation not captured:", geoError);
-      }
+      const { latitude, longitude } = await getCurrentPosition();
 
       const response = await api.post(
-        `/esign/applications/${applicationId}/start`,
-        { lat, lng }
+        `/esign/applications/${effectiveEsignId}/start`,
+        { lat: latitude, lng: longitude },
       );
-      const signerUrl =
-        response.data?.data?.signer_url ||
-        response.data?.data?.signing_url ||
-        "";
 
-      if (signerUrl) {
-        window.location.assign(signerUrl);
+      const signingUrl = response.data?.data?.signing_url;
+
+      if (!signingUrl) {
+        setMessage("eSign could not be started. Please try again.");
         return;
       }
 
-      setMessage(
-        "eSign request was created, but no signer URL was returned. Please check the backend provider response.",
-      );
+      setMessage("Redirecting to Setu eSign...");
+      window.location.href = signingUrl;
     } catch (error) {
-      const errorData = error.response?.data || {};
-      const apiMessage = errorData?.message || "";
-      const providerDetail =
-        errorData?.provider_payload?.error?.detail ||
-        errorData?.provider_payload?.message ||
-        "";
-
       setMessage(
-        apiMessage ||
-          providerDetail ||
-          "Unable to start the eSign flow right now.",
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to start the eSign step right now.",
       );
     } finally {
       setLoading(false);
@@ -328,7 +249,7 @@ const SignatureVerification = () => {
   };
 
   const handleCheckStatus = async () => {
-    if (!applicationId) {
+    if (!effectiveEsignId) {
       setMessage(
         "Application ID not found. Please resume the application again.",
       );
@@ -340,7 +261,7 @@ const SignatureVerification = () => {
       setMessage("Refreshing eSign status...");
 
       const response = await api.get(
-        `/esign/applications/${applicationId}/status`,
+        `/esign/applications/${effectiveEsignId}/status`,
       );
       const data = response.data?.data || {};
       const nextEsignStatus = data.esign_status || "";
@@ -352,7 +273,7 @@ const SignatureVerification = () => {
       if (nextProviderStatus === "sign_complete") {
         localStorage.setItem("esign_completed", "true");
         setSignedPdfUrl(
-          `${api.defaults.baseURL}/esign/applications/${applicationId}/signed-pdf`,
+          `${api.defaults.baseURL}/esign/applications/${effectiveEsignId}/signed-pdf`,
         );
         setMessage(
           "eSign completed successfully. Download the signed PDF or continue.",
@@ -373,6 +294,10 @@ const SignatureVerification = () => {
           "eSign is still pending. Please finish signing and check again.",
       );
     } catch (error) {
+      const code = error.response?.data?.code;
+      if (code === "ESIGN_NAME_MISMATCH" || code === "ESIGN_NAME_UNVERIFIABLE") {
+        setNeedsRetry(true);
+      }
       setMessage(
         error.response?.data?.message ||
           "Unable to check the eSign status right now.",
@@ -382,14 +307,6 @@ const SignatureVerification = () => {
     }
   };
 
-  useEffect(() => {
-    if (!applicationId || hasReturnFromEsign || isCompleted) {
-      return;
-    }
-
-    previewPdf();
-  }, [applicationId, hasReturnFromEsign, isCompleted]);
-
   return (
     <div className='container'>
       <KycStepper
@@ -398,36 +315,10 @@ const SignatureVerification = () => {
       />
 
       <div className=''>
-        <p>
-          Review your generated application PDF below, then proceed to the final
-          eSign step to complete onboarding.
-        </p>
+        
 
         {ddpiDetails?.ddpi_selected ? (
-          <div
-            style={{
-              marginTop: "24px",
-              border: "1px solid #d7defe",
-              borderRadius: "20px",
-              background: "#f8faff",
-              padding: "20px",
-            }}
-          >
-            <h4 style={{ color: "#264095", marginBottom: "8px" }}>
-              DDPI Stamp Paper Review
-            </h4>
-            <p style={{ marginBottom: "8px" }}>
-              <strong>Stamp paper assigned successfully.</strong>
-            </p>
-            {ddpiDetails.stamp_number ? (
-              <p style={{ marginBottom: "12px" }}>
-                Stamp Number: <strong>{ddpiDetails.stamp_number}</strong>
-              </p>
-            ) : null}
-            <p style={{ marginBottom: "16px" }}>
-              This stamp paper will be attached to your DDPI document for
-              eSign.
-            </p>
+          <div>
             {ddpiLoading ? (
               <p style={{ color: "#264095", marginBottom: 0 }}>
                 Loading assigned stamp paper...
@@ -445,18 +336,8 @@ const SignatureVerification = () => {
                   background: "#fff",
                 }}
               />
-            ) : (
-              <p style={{ color: "#264095", marginBottom: 0 }}>
-                Stamp paper is assigned, but no preview image is available yet.
-              </p>
-            )}
+            ) : null}
           </div>
-        ) : null}
-
-        {pdfMessage ? (
-          <p className='mt-3' style={{ color: "#264095" }}>
-            {pdfMessage}
-          </p>
         ) : null}
 
         {message ? (
@@ -472,217 +353,179 @@ const SignatureVerification = () => {
         ) : null}
 
         {!isCompleted && !hasReturnFromEsign ? (
-          <>
-            <div
-              style={{
-                marginTop: "24px",
-                border: "1px solid #d7defe",
-                borderRadius: "20px",
-                background: "#f8faff",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  padding: "16px 20px",
-                  borderBottom: "1px solid #d7defe",
-                  color: "#264095",
-                  fontWeight: 600,
-                }}
-              >
-                Application PDF Review
-              </div>
-
-              <div
-                style={{
-                  height: "70vh",
-                  minHeight: "540px",
-                  background: "#eef3ff",
-                  position: "relative",
-                }}
-              >
-                {pdfPreviewUrl ? (
-                  <>
-                    {pdfFrameLoading ? (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          zIndex: 1,
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "10px",
-                          color: "#264095",
-                          background: "#eef3ff",
-                        }}
-                      >
-                        <div className="spinner-border text-primary" role="status">
-                          <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <span>Loading PDF preview...</span>
-                      </div>
-                    ) : null}
-                    <iframe
-                      title='Application PDF Preview'
-                      src={pdfPreviewUrl}
-                      onLoad={() => {
-                        console.info("[PDF_PREVIEW] iframe load event", {
-                          applicationId,
-                          pdfPreviewUrl,
-                        });
-                        setPdfFrameLoading(false);
-                        setPdfFrameIssue(false);
-                      }}
-                      onError={(error) => {
-                        console.error("[PDF_PREVIEW] iframe error event", {
-                          applicationId,
-                          pdfPreviewUrl,
-                          error,
-                        });
-                        setPdfFrameLoading(false);
-                        setPdfFrameIssue(true);
-                      }}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        border: "0",
-                        background: "#fff",
-                      }}
-                    />
-                    {pdfFrameIssue ? (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "20px",
-                          right: "20px",
-                          bottom: "20px",
-                          zIndex: 2,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: "16px",
-                          padding: "14px 16px",
-                          border: "1px solid #d7defe",
-                          borderRadius: "14px",
-                          color: "#264095",
-                          background: "#fff",
-                          boxShadow: "0 10px 30px rgba(38, 64, 149, 0.12)",
-                        }}
-                      >
-                        <span>Preview is taking longer than expected.</span>
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div
-                    style={{
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#264095",
-                      padding: "24px",
-                      textAlign: "center",
-                    }}
-                  >
-                    {pdfLoading ? (
-                      <div className="d-flex flex-column align-items-center">
-                        <div className="spinner-border text-primary mb-2" role="status">
-                          <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <span>Preparing PDF preview...</span>
-                      </div>
-                    ) : (
-                      "PDF preview will appear here."
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <button
-              type='button'
-              className='submit-btn'
-              style={{
-                marginTop: "35px",
-                width: "auto",
-                minWidth: "320px",
-                maxWidth: "480px",
-                marginLeft: "auto",
-                marginRight: "auto",
-                paddingLeft: "32px",
-                paddingRight: "32px",
-              }}
-              onClick={handleStartEsign}
-              disabled={loading || statusLoading || pdfLoading}
-            >
-              {loading ? "Preparing eSign..." : "Confirm and Proceed to eSign"}
-            </button>
-          </>
+          <button
+            type='button'
+            className='submit-btn'
+            style={{
+              marginTop: "35px",
+              marginBottom: "40px",
+              width: "auto",
+              minWidth: "320px",
+              maxWidth: "480px",
+              marginLeft: "auto",
+              marginRight: "auto",
+              paddingLeft: "32px",
+              paddingRight: "32px",
+            }}
+            onClick={handleStartEsign}
+            disabled={loading || statusLoading || !applicationId}
+          >
+            {loading ? "Processing..." : "Proceed to eSign"}
+          </button>
         ) : null}
 
         {isCheckingReturnedEsign ? (
           <>
+            <style>{`
+              @keyframes esignSpin { to { transform: rotate(360deg); } }
+              @keyframes esignBounce {
+                0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; }
+                40% { transform: scale(1); opacity: 1; }
+              }
+              @keyframes esignBar {
+                0% { left: -40%; }
+                100% { left: 100%; }
+              }
+              @keyframes esignPulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.55; }
+              }
+            `}</style>
+
             <div
               style={{
                 marginTop: "24px",
                 border: "1px solid #d7defe",
                 borderRadius: "20px",
-                background: "#f8faff",
-                padding: "28px 24px",
+                background:
+                  "linear-gradient(135deg, #f2f6ff 0%, #eef2ff 50%, #f5f0ff 100%)",
+                padding: "40px 24px",
                 color: "#264095",
                 textAlign: "center",
               }}
             >
-              {statusLoading
-                ? "Checking eSign completion status..."
-                : "Waiting for the latest eSign status update from Setu."}
+              {/* gradient spinner ring */}
+              <div
+                style={{
+                  width: "72px",
+                  height: "72px",
+                  margin: "0 auto 22px",
+                  borderRadius: "50%",
+                  background:
+                    "conic-gradient(from 0deg, #2f6bff, #7b3ff2, #ff4d9d, #ffb020, #2f6bff)",
+                  WebkitMask:
+                    "radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px))",
+                  mask:
+                    "radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px))",
+                  animation: "esignSpin 1s linear infinite",
+                }}
+              />
+
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontWeight: 700,
+                  fontSize: "1.05rem",
+                  animation: "esignPulse 1.6s ease-in-out infinite",
+                }}
+              >
+                {statusLoading
+                  ? "Checking eSign completion status..."
+                  : "Waiting for the latest eSign status update from Setu."}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: "#5b6bb5" }}>
+                Please keep this page open. This usually takes a few seconds.
+              </p>
+
+              {/* bouncing dots */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  justifyContent: "center",
+                  margin: "20px 0 18px",
+                }}
+              >
+                {["#2f6bff", "#7b3ff2", "#ff4d9d"].map((c, i) => (
+                  <span
+                    key={c}
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      borderRadius: "50%",
+                      background: c,
+                      display: "inline-block",
+                      animation: `esignBounce 1.4s ease-in-out ${i * 0.16}s infinite`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* indeterminate progress bar */}
+              <div
+                style={{
+                  position: "relative",
+                  height: "6px",
+                  borderRadius: "999px",
+                  background: "#dfe6ff",
+                  overflow: "hidden",
+                  maxWidth: "320px",
+                  margin: "0 auto",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    width: "40%",
+                    borderRadius: "999px",
+                    background:
+                      "linear-gradient(90deg, #2f6bff, #7b3ff2, #ff4d9d)",
+                    animation: "esignBar 1.3s ease-in-out infinite",
+                  }}
+                />
+              </div>
+
+              {needsRetry ? (
+                <button
+                  type='button'
+                  className='submit-btn'
+                  style={{
+                    marginTop: "24px",
+                    marginBottom: "25px",
+                    width: "auto",
+                    minWidth: "320px",
+                    maxWidth: "480px",
+                    marginLeft: "auto",
+                    marginRight: "auto",
+                    paddingLeft: "32px",
+                    paddingRight: "32px",
+                  }}
+                  onClick={handleStartEsign}
+                  disabled={loading || !applicationId}
+                >
+                  {loading ? "Processing..." : "Try Again"}
+                </button>
+              ) : null}
             </div>
 
-            <button
-              type='button'
-              className='submit-btn'
-              style={{
-                marginTop: "16px",
-                background: "#fff",
-                color: "#264095",
-                border: "1px solid #264095",
-              }}
-              onClick={handleCheckStatus}
-              disabled={
-                loading || statusLoading || pdfLoading || !applicationId
-              }
-            >
-              {statusLoading ? "Checking Status..." : "Check Status"}
-            </button>
-          </>
-        ) : isCompleted ? (
-          <>
-            <a
-              href={signedPdfUrl}
-              className='submit-btn'
-              style={{
-                display: "inline-block",
-                marginTop: "16px",
-                textDecoration: "none",
-                textAlign: "center",
-              }}
-              target='_blank'
-              rel='noreferrer'
-            >
-              Download Signed PDF
-            </a>
-
-            <button
-              type='button'
-              className='submit-btn'
-              style={{ marginTop: "16px" }}
-              onClick={() => navigate("/kyc-complete")}
-            >
-              Continue to KYC Complete
-            </button>
+            {needsRetry ? null : (
+              <button
+                type='button'
+                className='submit-btn'
+                style={{
+                  marginTop: "16px",
+                  background: "#fff",
+                  color: "#264095",
+                  border: "1px solid #264095",
+                }}
+                onClick={handleCheckStatus}
+                disabled={loading || statusLoading || !applicationId}
+              >
+                Check Status
+              </button>
+            )}
           </>
         ) : null}
       </div>

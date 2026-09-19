@@ -1,5 +1,8 @@
 import axios from "axios";
 
+// Local backend port. Overridable via REACT_APP_API_BASE_URL in frontend/.env.
+const LOCAL_API_BASE_URL = "http://localhost:8080/api";
+
 const getApiBaseUrl = () => {
   if (process.env.REACT_APP_API_BASE_URL) {
     return process.env.REACT_APP_API_BASE_URL;
@@ -8,7 +11,7 @@ const getApiBaseUrl = () => {
   if (typeof window !== "undefined") {
     const { hostname } = window.location;
     if (["localhost", "127.0.0.1"].includes(hostname)) {
-      return "http://localhost:5000/api";
+      return LOCAL_API_BASE_URL;
     }
   }
 
