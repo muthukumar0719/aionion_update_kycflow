@@ -15,7 +15,7 @@ const getApiBaseUrl = () => {
     }
   }
 
-  return "https://57yp657i65.execute-api.ap-south-1.amazonaws.com/staging/api";
+  return "https://e3isedfkml.execute-api.ap-south-1.amazonaws.com/api";
 };
 
 const api = axios.create({
