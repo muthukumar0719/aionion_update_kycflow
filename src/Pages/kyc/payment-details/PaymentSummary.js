@@ -31,10 +31,10 @@ const PaymentSummary = () => {
     localStorage.getItem("scheme_selections") || "{}",
   );
 
-  // Mirrors the backend's PAYMENT_TEST_AMOUNT override (server/controllers/
-  // paymentController.js) so the summary shown here matches what actually
-  // gets charged. Leave REACT_APP_PAYMENT_TEST_AMOUNT unset for real pricing.
-  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 0);
+  // TEMPORARY: forced to Rs.1 to match the backend's PAYMENT_TEST_AMOUNT
+  // override while testing. Set back to 0 (or remove this line and read only
+  // REACT_APP_PAYMENT_TEST_AMOUNT) before going live with real pricing.
+  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 1);
 
   const accountOpeningCharges =
     Number.isFinite(testAmount) && testAmount > 0
