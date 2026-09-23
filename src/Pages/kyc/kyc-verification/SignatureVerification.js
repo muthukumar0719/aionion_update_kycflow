@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import KycStepper from "../../../Components/kyc/KycStepper";
@@ -248,6 +248,23 @@ const SignatureVerification = () => {
     }
   };
 
+  // Skip the manual "Proceed to eSign" click - go straight to Setu as soon as
+  // this page loads (fresh arrival only, not when returning from Setu).
+  const hasAutoStartedEsign = useRef(false);
+  useEffect(() => {
+    if (
+      hasAutoStartedEsign.current ||
+      !effectiveEsignId ||
+      hasReturnFromEsign ||
+      isCompleted
+    ) {
+      return;
+    }
+    hasAutoStartedEsign.current = true;
+    handleStartEsign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveEsignId, hasReturnFromEsign, isCompleted]);
+
   const handleCheckStatus = async () => {
     if (!effectiveEsignId) {
       setMessage(
@@ -340,6 +357,12 @@ const SignatureVerification = () => {
           </div>
         ) : null}
 
+        {loading && !isCompleted && !hasReturnFromEsign ? (
+          <p className='mt-3' style={{ color: "#264095" }}>
+            Starting eSign - please allow location access if prompted...
+          </p>
+        ) : null}
+
         {message ? (
           <p className='mt-3' style={{ color: "#264095" }}>
             {message}
@@ -352,7 +375,9 @@ const SignatureVerification = () => {
           </p>
         ) : null}
 
-        {!isCompleted && !hasReturnFromEsign ? (
+        {/* eSign now starts automatically on arrival - this button only
+            appears as a retry fallback if that auto-start failed. */}
+        {!isCompleted && !hasReturnFromEsign && !loading && message ? (
           <button
             type='button'
             className='submit-btn'
@@ -370,7 +395,7 @@ const SignatureVerification = () => {
             onClick={handleStartEsign}
             disabled={loading || statusLoading || !applicationId}
           >
-            {loading ? "Processing..." : "Proceed to eSign"}
+            Retry eSign
           </button>
         ) : null}
 
