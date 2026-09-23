@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import api from "../../../services/api";
+import { clearPendingPayment, savePendingPayment } from "../../../services/paymentRecovery";
 
 import paymentImg from "../../../assets/paymentimg.png";
 
@@ -117,6 +118,7 @@ const PaymentSummary = () => {
           },
         },
         handler: async (response) => {
+          savePendingPayment({ kyc_id: kycId, ...response });
           try {
             // 3) Verify on the backend
             const { data: verifyResponse } = await api.post("/payment/verify", {
@@ -126,21 +128,25 @@ const PaymentSummary = () => {
               razorpay_signature: response.razorpay_signature,
             });
 
-            if (verifyResponse?.success) {
+            if (verifyResponse?.success && verifyResponse.data?.payment_status === "paid") {
+              clearPendingPayment(kycId);
               // Single success toast is shown on the /payment-completed page.
               navigate("/payment-completed");
             } else {
               toast.error(
                 verifyResponse?.message || "Payment verification failed.",
               );
-              navigate("/payment-failed");
+              navigate("/payment-failed", { state: { message: verifyResponse?.message, orderId: order.order_id } });
             }
           } catch (verifyError) {
             console.log(
               "VERIFY ERROR:",
               verifyError.response?.data || verifyError.message,
             );
-            navigate("/payment-failed");
+            navigate("/payment-failed", { state: {
+              message: verifyError.response?.data?.message || "Checkout finished, but payment confirmation is unavailable.",
+              orderId: order.order_id,
+            } });
           } finally {
             setIsProcessing(false);
           }
@@ -151,7 +157,7 @@ const PaymentSummary = () => {
         console.log("PAYMENT FAILED:", response.error);
         toast.error(response.error?.description || "Payment failed.");
         setIsProcessing(false);
-        navigate("/payment-failed");
+        navigate("/payment-failed", { state: { message: response.error?.description, orderId: order.order_id } });
       });
 
       rzp.open();
