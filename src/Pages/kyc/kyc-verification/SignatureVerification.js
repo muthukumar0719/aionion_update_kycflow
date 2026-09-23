@@ -262,7 +262,6 @@ const SignatureVerification = () => {
     }
     hasAutoStartedEsign.current = true;
     handleStartEsign();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveEsignId, hasReturnFromEsign, isCompleted]);
 
   const handleCheckStatus = async () => {
