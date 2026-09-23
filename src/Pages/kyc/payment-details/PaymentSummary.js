@@ -31,10 +31,11 @@ const PaymentSummary = () => {
     localStorage.getItem("scheme_selections") || "{}",
   );
 
-  // Mirrors the backend's PAYMENT_TEST_AMOUNT override (server/controllers/
-  // paymentController.js) so the summary shown here matches what actually
-  // gets charged. Leave REACT_APP_PAYMENT_TEST_AMOUNT unset for real pricing.
-  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 0);
+  // TEMPORARY: forced to Rs.10 to match the backend's PAYMENT_TEST_AMOUNT
+  // override while testing in live mode (Rs.1 was rejected by Razorpay's
+  // live pricing rules with a pricing_sdk error). Set back to 0 before
+  // going live with real pricing.
+  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 10);
 
   const accountOpeningCharges =
     Number.isFinite(testAmount) && testAmount > 0
