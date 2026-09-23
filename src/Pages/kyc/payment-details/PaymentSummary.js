@@ -31,12 +31,21 @@ const PaymentSummary = () => {
     localStorage.getItem("scheme_selections") || "{}",
   );
 
-  const accountOpeningCharges = savedSchemeSelections.testing
-    ? 1
-    : savedSchemeSelections.annualCare
-      ? 1249
-      : 2499;
-  const taxAmount = (accountOpeningCharges * 18) / 100;
+  // Mirrors the backend's PAYMENT_TEST_AMOUNT override (server/controllers/
+  // paymentController.js) so the summary shown here matches what actually
+  // gets charged. Leave REACT_APP_PAYMENT_TEST_AMOUNT unset for real pricing.
+  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 0);
+
+  const accountOpeningCharges =
+    Number.isFinite(testAmount) && testAmount > 0
+      ? testAmount
+      : savedSchemeSelections.testing
+        ? 1
+        : savedSchemeSelections.annualCare
+          ? 1249
+          : 2499;
+  const taxAmount =
+    testAmount > 0 ? 0 : (accountOpeningCharges * 18) / 100;
   const total = accountOpeningCharges + taxAmount;
 
   useEffect(() => {
