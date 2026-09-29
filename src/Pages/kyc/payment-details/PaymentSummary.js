@@ -32,22 +32,10 @@ const PaymentSummary = () => {
     localStorage.getItem("scheme_selections") || "{}",
   );
 
-  // TEMPORARY: forced to Rs.10 to match the backend's PAYMENT_TEST_AMOUNT
-  // override while testing in live mode (Rs.1 was rejected by Razorpay's
-  // live pricing rules with a pricing_sdk error). Set back to 0 before
-  // going live with real pricing.
-  const testAmount = Number(process.env.REACT_APP_PAYMENT_TEST_AMOUNT || 10);
-
-  const accountOpeningCharges =
-    Number.isFinite(testAmount) && testAmount > 0
-      ? testAmount
-      : savedSchemeSelections.testing
-        ? 1
-        : savedSchemeSelections.annualCare
-          ? 1249
-          : 2499;
-  const taxAmount =
-    testAmount > 0 ? 0 : (accountOpeningCharges * 18) / 100;
+  // Real scheme pricing (test amount override removed):
+  // Annual Care = Rs.1249, otherwise Rs.2499, plus 18% GST.
+  const accountOpeningCharges = savedSchemeSelections.annualCare ? 1249 : 2499;
+  const taxAmount = (accountOpeningCharges * 18) / 100;
   const total = accountOpeningCharges + taxAmount;
 
   useEffect(() => {
