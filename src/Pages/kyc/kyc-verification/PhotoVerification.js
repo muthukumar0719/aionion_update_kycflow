@@ -279,7 +279,7 @@ const PhotoVerification = () => {
       if (tokenFromUrl && !localStorage.getItem("application_id")) {
         setSharedSuccess(true);
       } else {
-        navigate("/esign");
+        navigate("/uploadsignature");
       }
     } catch (error) {
       console.log("PHOTO UPLOAD ERROR:", error.response?.data || error.message);
