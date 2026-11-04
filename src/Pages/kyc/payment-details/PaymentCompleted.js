@@ -37,7 +37,7 @@ const PaymentCompleted = () => {
         <button
           type='button'
           className='submit-btn'
-          onClick={() => navigate("/photoverify")}
+          onClick={() => navigate("/esign")}
         >
           Continue
         </button>
