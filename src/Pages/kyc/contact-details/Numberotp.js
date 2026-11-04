@@ -102,18 +102,25 @@ const Numberotp = () => {
 
       const response = await api.post("/contact/verify-mobile-otp", {
         application_id: applicationId,
-        kyc_id: localStorage.getItem("kyc_id"),
+        kyc_id: applicationId,
         mobile_number: mobileNumber,
         otp: fullOtp,
       });
 
       toast.success("Mobile number verified successfully");
-      
+
+      // Use the application that the backend verified for the remaining steps.
+      const verifiedApplicationId = response.data?.data?.kyc_id || response.data?.data?.application_id;
+      if (verifiedApplicationId) {
+        localStorage.setItem("application_id", String(verifiedApplicationId));
+        localStorage.setItem("kyc_id", String(verifiedApplicationId));
+      }
+
       const nextRoute = response.data?.data?.next_step || "/emailverify";
 
       navigate(nextRoute, {
         state: {
-          application_id: applicationId,
+          application_id: verifiedApplicationId || applicationId,
         },
       });
     } catch (error) {
