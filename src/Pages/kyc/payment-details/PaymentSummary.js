@@ -151,6 +151,11 @@ const PaymentSummary = () => {
       rzp.open();
     } catch (error) {
       console.log("PAYMENT ERROR:", error.response?.data || error.message);
+      // Already paid or waived: nothing more to pay, so continue to the completed step.
+      if (error.response?.data?.code === "ALREADY_PAID") {
+        navigate("/payment-completed", { replace: true });
+        return;
+      }
       toast.error("Something went wrong while starting the payment.");
       setIsProcessing(false);
     }
